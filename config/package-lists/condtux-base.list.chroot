@@ -1,0 +1,17 @@
+sudo
+openssh-server
+nano
+curl
+wget
+git
+ca-certificates
+unattended-upgrades
+apt-listchanges
+bash-completion
+net-tools
+iproute2
+pciutils
+usbutils
+util-linux
+less
+

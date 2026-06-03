@@ -1,0 +1,26 @@
+# live-build outputs
+.build/
+.cache/
+cache/
+chroot/
+binary/
+output/
+logs/
+
+# ISO/output files
+*.iso
+*.img
+*.raw
+*.qcow2
+live-image-*
+binary.*
+
+# Logs temporales
+wget-log*
+*.log
+
+# Editor / sistema
+*~
+*.swp
+*.swo
+.DS_Store

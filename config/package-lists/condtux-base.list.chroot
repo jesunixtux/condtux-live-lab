@@ -10,8 +10,13 @@ apt-listchanges
 bash-completion
 net-tools
 iproute2
+iputils-ping
 pciutils
 usbutils
 util-linux
 less
-
+fastfetch
+locales
+console-setup
+keyboard-configuration
+network-manager

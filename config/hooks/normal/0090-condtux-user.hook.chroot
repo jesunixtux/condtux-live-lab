@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Configurando usuario live condtux..."
+
+if ! id condtux >/dev/null 2>&1; then
+    useradd -m -s /bin/bash -c "Condtux Live User" condtux
+fi
+
+echo "condtux:live" | chpasswd
+echo "root:live" | chpasswd
+
+usermod -aG sudo condtux
+
+mkdir -p /etc/sudoers.d
+
+cat > /etc/sudoers.d/condtux-live <<'EOF'
+condtux ALL=(ALL) NOPASSWD:ALL
+EOF
+
+chmod 0440 /etc/sudoers.d/condtux-live
+
+mkdir -p /etc/systemd/system/getty@tty1.service.d
+
+cat > /etc/systemd/system/getty@tty1.service.d/override.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin condtux --noclear %I $TERM
+Type=idle
+EOF
+
+echo "[ Condtux ] Usuario live listo."

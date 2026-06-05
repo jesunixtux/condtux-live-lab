@@ -1,0 +1,60 @@
+title-text: "Condtux 0.3 Minimal Orange"
+title-font: "Unifont Regular 32"
+title-color: "#ffffff"
+desktop-color: "#05080d"
+
+message-font: "Unifont Regular 16"
+message-color: "#ffffff"
+message-bg-color: "#05080d"
+
+terminal-font: "Unifont Regular 16"
+terminal-box: "terminal_box_*.png"
+
++ label {
+    top = 8%
+    left = 6%
+    width = 88%
+    height = 60
+    text = "Condtux 0.3 Minimal Orange"
+    font = "Unifont Regular 32"
+    color = "#ffffff"
+    align = "left"
+}
+
++ label {
+    top = 15%
+    left = 6%
+    width = 88%
+    height = 35
+    text = "Simple. Stable. Yours. | Based on Debian"
+    font = "Unifont Regular 16"
+    color = "#2f9bff"
+    align = "left"
+}
+
++ boot_menu {
+    left = 6%
+    top = 35%
+    width = 88%
+    height = 45%
+    item_font = "Unifont Regular 18"
+    item_color = "#d8dee9"
+    selected_item_color = "#ffffff"
+    selected_item_pixmap_style = "select_*.png"
+    icon_width = 0
+    icon_height = 0
+    item_height = 34
+    item_padding = 6
+    item_spacing = 4
+}
+
++ label {
+    top = 90%
+    left = 6%
+    width = 88%
+    height = 30
+    text = "Enter: boot | e: edit | c: command line"
+    font = "Unifont Regular 14"
+    color = "#888888"
+    align = "center"
+}

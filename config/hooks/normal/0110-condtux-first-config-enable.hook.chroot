@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Activando first configuration..."
+
+systemctl enable condtux-first-config.service || true
+
+echo "[ Condtux ] First configuration activado."

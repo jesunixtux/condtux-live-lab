@@ -20,3 +20,6 @@ locales
 console-setup
 keyboard-configuration
 network-manager
+live-config
+live-boot
+whiptail

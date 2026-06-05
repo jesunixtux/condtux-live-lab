@@ -1,0 +1,19 @@
+
+#!/bin/sh
+
+set -e
+
+echo "[ Condtux ] Configurando tasksel minimal..."
+
+mkdir -p /var/lib/dpkg/info
+
+# Evitar popularity-contest
+
+echo "popularity-contest popularity-contest/participate boolean false" | debconf-set-selections || true
+
+# No desktop por defecto
+
+echo "tasksel tasksel/first multiselect standard, ssh-server" | debconf-set-selections || true
+
+echo "[ Condtux ] Tasksel listo."
+

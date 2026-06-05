@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Eliminando popularity-contest..."
+
+apt-get purge -y popularity-contest || true
+apt-get autoremove -y || true
+
+echo "[ Condtux ] popularity-contest eliminado."

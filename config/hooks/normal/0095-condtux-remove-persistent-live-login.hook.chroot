@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Limpiando configuraciones persistentes de usuario live..."
+
+# No dejar autologin permanente dentro del sistema instalado
+rm -rf /etc/systemd/system/getty@tty1.service.d
+
+# No dejar sudoers live permanente
+rm -f /etc/sudoers.d/condtux
+rm -f /etc/sudoers.d/condtux-live
+
+# No crear usuario condtux aquí.
+# El usuario Live lo debe manejar live-config.
+# El usuario instalado lo debe crear Debian Installer.
+
+echo "[ Condtux ] Limpieza live completada."

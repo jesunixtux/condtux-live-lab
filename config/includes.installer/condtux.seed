@@ -1,0 +1,74 @@
+# Condtux 0.3 preseed parcial
+
+# No forzamos usuario aquí.
+# El instalador debe preguntar usuario y contraseña normalmente.
+
+# Repositorios Debian
+d-i apt-setup/use_mirror boolean true
+d-i apt-setup/disable-cdrom-entries boolean true
+d-i mirror/country string manual
+d-i mirror/http/hostname string deb.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+# Security
+d-i apt-setup/security_host string security.debian.org
+d-i apt-setup/security_path string /debian-security
+
+# Instalar sudo y herramientas base
+d-i pkgsel/include string sudo openssh-server nano curl wget ca-certificates
+
+# Reparar sources.list en sistema instalado
+d-i preseed/late_command string \
+in-target /bin/sh -c "cat > /etc/apt/sources.list <<'EOF'\ndeb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\ndeb http://security.debian.org/debian-security trixie-security main\nEOF"; \
+in-target rm -f /etc/sudoers.d/condtux /etc/sudoers.d/condtux-live; \
+in-target rm -rf /etc/systemd/system/getty@tty1.service.d; \
+in-target /bin/sh -c "echo Condtux 0.3 Minimal Orange - Debian 13 trixie amd64 > /etc/condtux-release"; \
+in-target /bin/sh -c "echo condtux > /etc/hostname"
+
+# Condtux installer defaults
+
+### Locale
+d-i debian-installer/locale string es_CL.UTF-8
+d-i keyboard-configuration/xkb-keymap select latam
+
+### Network
+d-i netcfg/get_hostname string condtux
+d-i netcfg/get_domain string local
+
+### Mirror principal temporal
+# Por ahora apuntamos a repo Condtux.
+# Si no existe todavía, puede fallar durante instalación.
+# Para pruebas reales, deja deb.debian.org hasta montar repo-condtux.jeval.cl.
+d-i mirror/country string manual
+d-i mirror/http/hostname string deb.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+### No CD-ROM como repo final
+d-i apt-setup/disable-cdrom-entries boolean true
+d-i apt-setup/use_mirror boolean true
+
+### Popularity contest fuera
+popularity-contest popularity-contest/participate boolean false
+
+### Tasksel: sistema mínimo, sin GNOME por defecto
+tasksel tasksel/first multiselect standard, ssh-server
+
+### Paquetes base
+d-i pkgsel/include string sudo openssh-server nano curl wget git ca-certificates unattended-upgrades apt-listchanges fastfetch network-manager
+
+### Actualizaciones
+d-i pkgsel/upgrade select safe-upgrade
+
+### Late command: branding + APT híbrido
+d-i preseed/late_command string \
+in-target /bin/sh -c "echo condtux > /etc/hostname"; \
+in-target /bin/sh -c "cat > /etc/hosts <<'EOF'\n127.0.0.1 localhost\n127.0.1.1 condtux\n\n::1 localhost ip6-localhost ip6-loopback\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters\nEOF"; \
+in-target /bin/sh -c "mkdir -p /etc/apt/sources.list.d"; \
+in-target /bin/sh -c "cat > /etc/apt/sources.list <<'EOF'\n# Condtux uses /etc/apt/sources.list.d/*.sources\nEOF"; \
+in-target /bin/sh -c "cat > /etc/apt/sources.list.d/condtux.sources <<'EOF'\nTypes: deb\nURIs: https://repo-condtux.jeval.cl/apt\nSuites: trixie\nComponents: main\nArchitectures: amd64\nTrusted: yes\n\nTypes: deb\nURIs: http://deb.debian.org/debian\nSuites: trixie trixie-updates\nComponents: main\nArchitectures: amd64\n\nTypes: deb\nURIs: http://security.debian.org/debian-security\nSuites: trixie-security\nComponents: main\nArchitectures: amd64\nEOF"; \
+in-target /bin/sh -c "cat > /etc/apt/preferences.d/condtux.pref <<'EOF'\nPackage: *\nPin: origin repo-condtux.jeval.cl\nPin-Priority: 700\n\nPackage: *\nPin: release o=Debian\nPin-Priority: 500\nEOF"; \
+in-target apt-get purge -y popularity-contest || true; \
+in-target systemctl enable NetworkManager || true; \
+in-target systemctl enable condtux-first-config.service || true

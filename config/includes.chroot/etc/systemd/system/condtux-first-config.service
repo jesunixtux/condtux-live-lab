@@ -1,0 +1,16 @@
+[Unit]
+Description=Condtux First Configuration
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/etc/condtux/first-config.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/condtux-first-config
+RemainAfterExit=yes
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+
+[Install]
+WantedBy=multi-user.target

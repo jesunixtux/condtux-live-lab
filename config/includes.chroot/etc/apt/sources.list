@@ -1,0 +1,3 @@
+# Condtux no usa este archivo directamente.
+# Las fuentes APT están en:
+# /etc/apt/sources.list.d/condtux.sources

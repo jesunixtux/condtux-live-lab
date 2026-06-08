@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+# No ejecutar en sesión Live
+if grep -q "boot=live" /proc/cmdline 2>/dev/null; then
+    exit 0
+fi
+
+if systemctl is-active --quiet live-config.service 2>/dev/null; then
+    exit 0
+fi
+
 DONE_FILE="/etc/condtux/first-config.done"
 mkdir -p /etc/condtux
 

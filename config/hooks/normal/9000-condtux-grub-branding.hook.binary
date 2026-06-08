@@ -3,23 +3,14 @@ set -e
 
 echo "[ Condtux ] Aplicando branding GRUB..."
 
-# Activar tema si existe grub.cfg
-if [ -f binary/boot/grub/grub.cfg ]; then
-    sed -i '1i set theme=/boot/grub/themes/condtux/theme.txt' binary/boot/grub/grub.cfg
-    sed -i '1i set timeout=8' binary/boot/grub/grub.cfg
-
-    sed -i 's/Debian GNU\/Linux/Condtux/g' binary/boot/grub/grub.cfg
-    sed -i 's/Live system (amd64)/Start Condtux Live (amd64)/g' binary/boot/grub/grub.cfg
-    sed -i 's/Live system (amd64 fail-safe mode)/Start Condtux Live Safe Mode/g' binary/boot/grub/grub.cfg
-    sed -i 's/Start installer/Install Condtux/g' binary/boot/grub/grub.cfg
-    sed -i 's/Advanced install options/Advanced Condtux install options/g' binary/boot/grub/grub.cfg
-    sed -i 's/Utilities/Condtux utilities/g' binary/boot/grub/grub.cfg
-fi
-
-# Parche para otros cfg si existen
-find binary -type f \( -name "*.cfg" -o -name "*.txt" \) -print | while read -r file; do
+find . -type f \( -name "*.cfg" -o -name "*.txt" -o -name "*.html" \) -print | while read -r file; do
     sed -i 's/Debian GNU\/Linux/Condtux/g' "$file" || true
     sed -i 's/Debian/Condtux/g' "$file" || true
+    sed -i 's/Live system (amd64)/Iniciar Condtux Live/g' "$file" || true
+    sed -i 's/Live system (amd64 fail-safe mode)/Iniciar Condtux modo seguro/g' "$file" || true
+    sed -i 's/Start installer/Instalar Condtux/g' "$file" || true
+    sed -i 's/Advanced install options/Opciones avanzadas de instalación/g' "$file" || true
+    sed -i 's/Utilities/Herramientas/g' "$file" || true
 done
 
 echo "[ Condtux ] Branding GRUB aplicado."

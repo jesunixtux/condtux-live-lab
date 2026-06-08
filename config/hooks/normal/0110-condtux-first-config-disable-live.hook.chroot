@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Desactivando first-config dentro del Live..."
+
+systemctl disable condtux-first-config.service 2>/dev/null || true
+rm -f /etc/systemd/system/multi-user.target.wants/condtux-first-config.service || true
+
+echo "[ Condtux ] First-config no correrá en Live."

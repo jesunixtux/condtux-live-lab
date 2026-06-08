@@ -3,15 +3,15 @@ set -e
 
 cd "$HOME/condtux-live-lab"
 
-echo "[ Condtux Live 0.4 ] Limpiando build anterior..."
+echo "[ Condtux Live 0.5 ] Limpiando build anterior..."
 sudo lb clean --purge || true
 
-echo "[ Condtux Live 0.4 ] Borrando cache vieja..."
+echo "[ Condtux Live 0.5 ] Borrando cache vieja..."
 sudo rm -rf .build chroot binary cache
 rm -f *.iso live-image-* binary.*
 rm -f output/*.iso
 
-echo "[ Condtux Live 0.4 ] Reconfigurando live-build..."
+echo "[ Condtux Live 0.5 ] Reconfigurando live-build..."
 lb config \
   --distribution trixie \
   --architectures amd64 \
@@ -21,8 +21,8 @@ lb config \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer true \
   --debian-installer-gui false \
-  --iso-volume "CONDTUX04" \
-  --iso-application "Condtux 0.4 Minimal Orange" \
+  --iso-volume "CONDTUX05" \
+  --iso-application "Condtux 0.5 Minimal Orange" \
   --iso-preparer "Condtux Project" \
   --mirror-bootstrap http://deb.debian.org/debian \
   --mirror-chroot http://deb.debian.org/debian \
@@ -31,8 +31,9 @@ lb config \
   --mirror-chroot-security http://security.debian.org/debian-security \
   --mirror-binary-security http://security.debian.org/debian-security \
   --apt-recommends false \
+  --bootappend-install "preseed/file=/cdrom/preseed/condtux.seed" \
   --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
-echo "[ Condtux Live 0.4 ] Construyendo ISO..."
+echo "[ Condtux Live 0.5 ] Construyendo ISO..."
 sudo lb build
 
 mkdir -p output
@@ -44,9 +45,9 @@ if [ -z "$ISO_FOUND" ]; then
     exit 1
 fi
 
-cp -v "$ISO_FOUND" output/condtux-0.4-minimal-orange-amd64.iso
+cp -v "$ISO_FOUND" output/condtux-0.5-minimal-orange-amd64.iso
 
 echo
-echo "[ Condtux Live 0.3 ] ISO lista:"
+echo "[ Condtux Live 0.5 ] ISO lista:"
 ls -lh output/
-sha256sum output/condtux-0.4-minimal-orange-amd64.iso | tee output/condtux-0.4-minimal-orange-amd64.iso.sha256
+sha256sum output/condtux-0.5-minimal-orange-amd64.iso | tee output/condtux-0.5-minimal-orange-amd64.iso.sha256

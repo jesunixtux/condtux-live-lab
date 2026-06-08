@@ -13,7 +13,7 @@ LB_APT_INDICES="true"
 LB_BOOTAPPEND_LIVE="boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
 
 # Set boot parameters
-LB_BOOTAPPEND_INSTALL="file=/cdrom/install/config/includes.installer/condtux.seed"
+LB_BOOTAPPEND_INSTALL="preseed/file=/cdrom/preseed/condtux.seed file=/cdrom/install/config/includes.installer/condtux.seed"
 
 # Set boot parameters
 LB_BOOTAPPEND_LIVE_FAILSAFE="boot=live components memtest noapic noapm nodma nomce nosmp nosplash vga=788"
@@ -71,7 +71,7 @@ LB_HDD_SIZE="auto"
 LB_HDD_PARTITION_START=""
 
 # Set iso author
-LB_ISO_APPLICATION="Condtux 0.4 Minimal Orange"
+LB_ISO_APPLICATION="Condtux 0.5 Minimal Orange"
 
 # Set iso preparer
 LB_ISO_PREPARER="Condtux Project"
@@ -80,7 +80,7 @@ LB_ISO_PREPARER="Condtux Project"
 LB_ISO_PUBLISHER="Debian Live project; https://wiki.debian.org/DebianLive; debian-live@lists.debian.org"
 
 # Set iso volume (max 32 chars)
-LB_ISO_VOLUME="CONDTUX04"
+LB_ISO_VOLUME="CONDTUX05"
 
 # Set jffs2 eraseblock size
 LB_JFFS2_ERASEBLOCK=""

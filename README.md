@@ -14,6 +14,17 @@ sudo condtux-install
 
 El instalador no depende de Debian Installer. Esta pensado para instalaciones UEFI en disco completo y debe tratarse como destructivo hasta completar sus confirmaciones.
 
+En Condtux 0.6 el instalador pregunta el perfil antes de tocar el disco:
+
+- `Minimal sin escritorio`: sistema base para terminal, servidor o VM liviana.
+- `Escritorio XFCE`: instala XFCE, LightDM, NetworkManager grafico y herramientas basicas de escritorio.
+
+El Live tambien incluye el repositorio APT firmado de Condtux en:
+
+```text
+https://repo-condtux.jeval.cl/apt
+```
+
 ## Estructura
 
 ```text

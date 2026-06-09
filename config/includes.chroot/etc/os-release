@@ -1,10 +1,10 @@
-PRETTY_NAME="Condtux 0.3 Minimal Orange"
+PRETTY_NAME="Condtux 0.6 Live"
 NAME="Condtux"
-VERSION_ID="0.3"
-VERSION="0.3 Minimal Orange"
+VERSION_ID="0.6"
+VERSION="0.6 Live"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian
 HOME_URL="https://github.com/jechugit/condtux-live-lab"
-SUPPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
+SUPPORT_URL="https://repo-condtux.jeval.cl/"
 BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"

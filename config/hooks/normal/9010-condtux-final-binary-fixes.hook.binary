@@ -4,7 +4,7 @@ set -e
 echo "[ Condtux ] Aplicando fixes finales binary..."
 
 # Limpia residuos de pruebas anteriores del Debian Installer. El instalador
-# soportado para Condtux 0.5 es /usr/local/sbin/condtux-install dentro del Live.
+# soportado para Condtux 0.6 es /usr/local/sbin/condtux-install dentro del Live.
 find . -type f \( -name "*.cfg" -o -name "*.txt" \) -print | while read -r file; do
     sed -i 's#preseed/file=/cdrom/preseed/condtux.seed#preseed/file=/preseed.cfg#g' "$file" || true
     sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' "$file" || true

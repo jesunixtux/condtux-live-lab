@@ -1,9 +1,0 @@
-# Condtux repo - desactivado temporalmente en la ISO 0.5.
-# Se activará cuando repo-condtux.jeval.cl tenga Release firmado y keyring.
-#
-# Types: deb
-# URIs: https://repo-condtux.jeval.cl/apt
-# Suites: trixie
-# Components: main
-# Architectures: amd64
-# Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg

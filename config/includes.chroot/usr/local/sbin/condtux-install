@@ -4,13 +4,16 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
 
-TITLE="Condtux Installer 0.5"
+TITLE="Condtux Installer 0.6"
 TARGET="/mnt"
 DEBIAN_SUITE="trixie"
 DEBIAN_MIRROR="http://deb.debian.org/debian"
+CONDTUX_REPO_URL="https://repo-condtux.jeval.cl/apt"
+CONDTUX_KEYRING="/usr/share/keyrings/condtux-archive-keyring.gpg"
 HOSTNAME="condtux"
 USERNAME="condtux"
 TEMP_PASSWORD="condtux"
+INSTALL_PROFILE="minimal"
 
 EFI_PART=""
 ROOT_PART=""
@@ -54,6 +57,41 @@ inputbox() {
         read -r answer
         printf '%s\n' "$answer"
     fi
+}
+
+profile_label() {
+    case "$INSTALL_PROFILE" in
+        xfce) printf 'Escritorio XFCE' ;;
+        *) printf 'Minimal sin escritorio' ;;
+    esac
+}
+
+select_install_profile() {
+    local choice selected
+
+    if has_whiptail; then
+        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.6.\n\nEsto se define antes de tocar el disco." 17 78 2 \
+            minimal "Minimal sin escritorio, ideal para terminal o servidor" \
+            xfce "Escritorio XFCE con LightDM y herramientas graficas" \
+            3>&1 1>&2 2>&3)"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+        INSTALL_PROFILE="$choice"
+        return 0
+    fi
+
+    echo "Perfil de instalacion:" >&2
+    echo "  1) Minimal sin escritorio" >&2
+    echo "  2) Escritorio XFCE" >&2
+    printf 'Seleccion [1]: ' >&2
+    read -r selected
+
+    case "${selected:-1}" in
+        1|minimal|Minimal) INSTALL_PROFILE="minimal" ;;
+        2|xfce|XFCE|Xfce) INSTALL_PROFILE="xfce" ;;
+        *) die "Perfil de instalacion invalido." ;;
+    esac
 }
 
 die() {
@@ -185,8 +223,11 @@ confirm_destruction() {
     local disk="$1"
     local expected="BORRAR $disk"
     local typed
+    local profile
 
-    if ! yesno "Vas a instalar Condtux en:\n\n$disk\n\nESTO BORRARA TODO EL DISCO.\n\nQuieres continuar?"; then
+    profile="$(profile_label)"
+
+    if ! yesno "Resumen de instalacion:\n\nPerfil: $profile\nDisco: $disk\nParticiones: EFI 512 MiB + root ext4\n\nESTO BORRARA TODO EL DISCO.\n\nQuieres continuar?"; then
         echo "Instalacion cancelada."
         exit 0
     fi
@@ -246,6 +287,31 @@ UUID=$efi_uuid /boot/efi vfat umask=0077 0 1
 FSTAB
 }
 
+configure_condtux_repo_target() {
+    local target_keyring="$TARGET/usr/share/keyrings/condtux-archive-keyring.gpg"
+
+    mkdir -p "$TARGET/usr/share/keyrings" "$TARGET/etc/apt/sources.list.d"
+
+    if [ -f "$CONDTUX_KEYRING" ]; then
+        cp -f "$CONDTUX_KEYRING" "$target_keyring"
+    elif ! curl -fsSL --connect-timeout 20 "$CONDTUX_REPO_URL/condtux-archive-keyring.gpg" -o "$target_keyring"; then
+        echo "[ Condtux ] Aviso: no se pudo instalar la llave del repo Condtux. Se continuara con repos Debian."
+        rm -f "$target_keyring"
+        return 0
+    fi
+
+    chmod 0644 "$target_keyring"
+
+    cat > "$TARGET/etc/apt/sources.list.d/condtux.sources" <<SRC
+Types: deb
+URIs: $CONDTUX_REPO_URL
+Suites: trixie
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
+SRC
+}
+
 mount_chroot_filesystems() {
     mount --rbind /dev "$TARGET/dev"
     mount --make-rslave "$TARGET/dev"
@@ -264,6 +330,18 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
+
+INSTALL_PROFILE="$(cat /tmp/condtux-install-profile 2>/dev/null || echo minimal)"
+
+case "$INSTALL_PROFILE" in
+  xfce)
+    CONDTUX_FLAVOR="XFCE"
+    ;;
+  *)
+    INSTALL_PROFILE="minimal"
+    CONDTUX_FLAVOR="Minimal"
+    ;;
+esac
 
 cat > /tmp/condtux-debconf.selections <<'DEBCONF'
 locales locales/default_environment_locale select es_CL.UTF-8
@@ -304,6 +382,41 @@ apt install -y \
   usbutils \
   less
 
+install_xfce_desktop() {
+  apt install -y \
+    task-xfce-desktop \
+    xfce4-terminal \
+    lightdm \
+    lightdm-gtk-greeter \
+    network-manager-gnome \
+    mousepad \
+    pavucontrol \
+    pipewire-audio \
+    fonts-dejavu \
+    adwaita-icon-theme \
+    greybird-gtk-theme
+
+  mkdir -p /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml
+
+  cat > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml <<'XFCE'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xsettings" version="1.0">
+  <property name="Net" type="empty">
+    <property name="ThemeName" type="string" value="Greybird"/>
+    <property name="IconThemeName" type="string" value="Adwaita"/>
+  </property>
+</channel>
+XFCE
+
+  systemctl set-default graphical.target || true
+  systemctl enable lightdm || true
+}
+
+if [ "$INSTALL_PROFILE" = "xfce" ]; then
+  install_xfce_desktop
+fi
+
 echo condtux > /etc/hostname
 
 cat > /etc/hosts <<'HOSTS'
@@ -313,11 +426,11 @@ cat > /etc/hosts <<'HOSTS'
 ::1 localhost ip6-localhost ip6-loopback
 HOSTS
 
-cat > /etc/os-release <<'OSR'
-PRETTY_NAME="Condtux 0.5 Minimal"
+cat > /etc/os-release <<OSR
+PRETTY_NAME="Condtux 0.6 ${CONDTUX_FLAVOR}"
 NAME="Condtux"
-VERSION_ID="0.5"
-VERSION="0.5 Minimal"
+VERSION_ID="0.6"
+VERSION="0.6 ${CONDTUX_FLAVOR}"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian
@@ -326,7 +439,7 @@ SUPPORT_URL="https://repo-condtux.jeval.cl/"
 BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
 OSR
 
-echo "Condtux 0.5 Minimal" > /etc/condtux-release
+echo "Condtux 0.6 ${CONDTUX_FLAVOR}" > /etc/condtux-release
 
 sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
 sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
@@ -382,7 +495,7 @@ cp -f /boot/efi/EFI/Condtux/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
 update-grub
 
 apt clean
-rm -f /tmp/condtux-debconf.selections
+rm -f /tmp/condtux-debconf.selections /tmp/condtux-install-profile
 CHROOT
 
     chmod +x "$TARGET/tmp/condtux-chroot-setup.sh"
@@ -398,6 +511,7 @@ install_base() {
 
     clear || true
     echo "[ Condtux ] Instalando en $disk"
+    echo "[ Condtux ] Perfil: $(profile_label)"
     echo "[ Condtux ] EFI:  $EFI_PART"
     echo "[ Condtux ] ROOT: $ROOT_PART"
 
@@ -432,12 +546,14 @@ install_base() {
 
     echo "[ Condtux ] Configurando repositorios y fstab..."
     write_target_files
+    configure_condtux_repo_target
 
     echo "[ Condtux ] Preparando chroot..."
     mount_chroot_filesystems
     create_chroot_setup_script
+    printf '%s\n' "$INSTALL_PROFILE" > "$TARGET/tmp/condtux-install-profile"
 
-    echo "[ Condtux ] Instalando kernel, GRUB, usuario y servicios..."
+    echo "[ Condtux ] Instalando kernel, GRUB, usuario, servicios y perfil $(profile_label)..."
     chroot "$TARGET" /bin/bash /tmp/condtux-chroot-setup.sh
     rm -f "$TARGET/tmp/condtux-chroot-setup.sh"
 
@@ -449,6 +565,7 @@ install_base() {
     echo
     echo "======================================================"
     echo " Condtux instalado correctamente."
+    echo " Perfil: $(profile_label)"
     echo " Usuario: condtux"
     echo " Password temporal: condtux"
     echo " Root password temporal: condtux"
@@ -464,8 +581,9 @@ main() {
     check_uefi
     require_commands
 
-    msg "Bienvenido al instalador de Condtux 0.5.\n\nInstalara Condtux descargando Debian trixie desde internet.\n\nSoporta solo UEFI, amd64 y disco completo."
+    msg "Bienvenido al instalador de Condtux 0.6.\n\nInstalara Condtux descargando Debian trixie desde internet.\n\nSoporta solo UEFI, amd64 y disco completo."
 
+    select_install_profile
     check_network
     disk="$(menu_disk)"
     confirm_destruction "$disk"

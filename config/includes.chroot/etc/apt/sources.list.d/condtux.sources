@@ -1,0 +1,6 @@
+Types: deb
+URIs: https://repo-condtux.jeval.cl/apt
+Suites: trixie
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg

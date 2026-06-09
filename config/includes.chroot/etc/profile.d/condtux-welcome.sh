@@ -18,13 +18,14 @@ if [ -n "$PS1" ]; then
     echo "              CONDTUX"
     echo "           Based on Debian"
     echo
-    echo " Condtux 0.3 Minimal Orange"
+    echo " Condtux 0.6 Live"
     echo " Usuario live: condtux"
     echo " Password live: live"
     echo
     echo " Comandos útiles:"
     echo "   condfetch"
     echo "   cat /etc/condtux-release"
+    echo "   sudo condtux-install"
     echo "   sudo apt update"
     echo
 fi

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "[ Condtux ] Configurando repositorios APT Debian limpios..."
+echo "[ Condtux ] Configurando repositorios APT..."
 
 cat > /etc/apt/sources.list <<'EOF'
 deb http://deb.debian.org/debian trixie main
@@ -10,10 +10,21 @@ deb http://security.debian.org/debian-security trixie-security main
 EOF
 
 rm -f /etc/apt/sources.list.d/condtux.sources
+rm -f /etc/apt/sources.list.d/condtux.sources.disabled
 
-cat > /etc/apt/sources.list.d/condtux.sources.disabled <<'EOF'
-# Condtux repo - desactivado temporalmente en la ISO 0.5.
-# Se activará cuando repo-condtux.jeval.cl tenga Release firmado y keyring.
+if [ -f /usr/share/keyrings/condtux-archive-keyring.gpg ]; then
+    cat > /etc/apt/sources.list.d/condtux.sources <<'EOF'
+Types: deb
+URIs: https://repo-condtux.jeval.cl/apt
+Suites: trixie
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
+EOF
+    echo "[ Condtux ] Repo Condtux activo."
+else
+    cat > /etc/apt/sources.list.d/condtux.sources.disabled <<'EOF'
+# Condtux repo - falta /usr/share/keyrings/condtux-archive-keyring.gpg.
 #
 # Types: deb
 # URIs: https://repo-condtux.jeval.cl/apt
@@ -22,5 +33,7 @@ cat > /etc/apt/sources.list.d/condtux.sources.disabled <<'EOF'
 # Architectures: amd64
 # Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
 EOF
+    echo "[ Condtux ] Repo Condtux desactivado: falta keyring."
+fi
 
-echo "[ Condtux ] Repositorios Debian listos. Repo Condtux desactivado temporalmente."
+echo "[ Condtux ] Repositorios APT listos."

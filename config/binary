@@ -13,7 +13,7 @@ LB_APT_INDICES="true"
 LB_BOOTAPPEND_LIVE="boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
 
 # Set boot parameters
-LB_BOOTAPPEND_INSTALL="preseed/file=/cdrom/preseed/condtux.seed file=/cdrom/install/config/includes.installer/condtux.seed"
+LB_BOOTAPPEND_INSTALL=""
 
 # Set boot parameters
 LB_BOOTAPPEND_LIVE_FAILSAFE="boot=live components memtest noapic noapm nodma nomce nosmp nosplash vga=788"
@@ -50,13 +50,13 @@ LB_ZSYNC="false"
 LB_BUILD_WITH_CHROOT="true"
 
 # Set debian-installer
-LB_DEBIAN_INSTALLER="netinst"
+LB_DEBIAN_INSTALLER="none"
 
 # Set debian-installer suite
 LB_DEBIAN_INSTALLER_DISTRIBUTION="trixie"
 
 # Set debian-installer preseed filename/url
-LB_DEBIAN_INSTALLER_PRESEEDFILE="config/includes.installer/condtux.seed"
+LB_DEBIAN_INSTALLER_PRESEEDFILE=""
 
 # Toggle use of GUI debian-installer
 LB_DEBIAN_INSTALLER_GUI="false"

@@ -1,0 +1,33 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Aplicando fixes finales binary..."
+
+# Limpia residuos de pruebas anteriores del Debian Installer. El instalador
+# soportado para Condtux 0.5 es /usr/local/sbin/condtux-install dentro del Live.
+find . -type f \( -name "*.cfg" -o -name "*.txt" \) -print | while read -r file; do
+    sed -i 's#preseed/file=/cdrom/preseed/condtux.seed#preseed/file=/preseed.cfg#g' "$file" || true
+    sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' "$file" || true
+    sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' "$file" || true
+    sed -i 's#auto=true priority=critical vga=788 auto=true priority=critical#auto=true priority=critical vga=788#g' "$file" || true
+done
+
+# UEFI fallback visible: EFI/BOOT/BOOTX64.EFI
+mkdir -p EFI/BOOT
+
+if [ -f EFI/boot/bootx64.efi ]; then
+    cp -f EFI/boot/bootx64.efi EFI/BOOT/BOOTX64.EFI
+elif [ -f boot/grub/x86_64-efi/core.efi ]; then
+    cp -f boot/grub/x86_64-efi/core.efi EFI/BOOT/BOOTX64.EFI
+elif [ -f /usr/lib/grub/x86_64-efi/monolithic/grubx64.efi ]; then
+    cp -f /usr/lib/grub/x86_64-efi/monolithic/grubx64.efi EFI/BOOT/BOOTX64.EFI
+elif [ -f /usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed ]; then
+    cp -f /usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed EFI/BOOT/BOOTX64.EFI
+fi
+
+if [ ! -s EFI/BOOT/BOOTX64.EFI ]; then
+    echo "[ Condtux ] ERROR: no se pudo asegurar EFI/BOOT/BOOTX64.EFI."
+    exit 1
+fi
+
+echo "[ Condtux ] Fixes finales binary listos."

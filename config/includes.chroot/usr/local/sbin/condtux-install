@@ -1,0 +1,479 @@
+#!/bin/bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+export APT_LISTCHANGES_FRONTEND=none
+
+TITLE="Condtux Installer 0.5"
+TARGET="/mnt"
+DEBIAN_SUITE="trixie"
+DEBIAN_MIRROR="http://deb.debian.org/debian"
+HOSTNAME="condtux"
+USERNAME="condtux"
+TEMP_PASSWORD="condtux"
+
+EFI_PART=""
+ROOT_PART=""
+
+has_whiptail() {
+    command -v whiptail >/dev/null 2>&1 && [ -t 1 ]
+}
+
+msg() {
+    local text="$1"
+
+    if has_whiptail; then
+        whiptail --title "$TITLE" --msgbox "$text" 14 76
+    else
+        printf '\n%s\n\n' "$text"
+    fi
+}
+
+yesno() {
+    local text="$1"
+
+    if has_whiptail; then
+        whiptail --title "$TITLE" --yesno "$text" 14 76
+    else
+        printf '%s [s/N] ' "$text"
+        read -r answer
+        case "$answer" in
+            s|S|si|SI|Si|yes|YES|Yes) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+}
+
+inputbox() {
+    local text="$1"
+
+    if has_whiptail; then
+        whiptail --title "$TITLE" --inputbox "$text" 11 76 3>&1 1>&2 2>&3
+    else
+        printf '%s\n> ' "$text" >&2
+        read -r answer
+        printf '%s\n' "$answer"
+    fi
+}
+
+die() {
+    local text="$1"
+
+    printf 'ERROR: %s\n' "$text" >&2
+    msg "$text" || true
+    exit 1
+}
+
+need_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Ejecuta: sudo condtux-install"
+        exit 1
+    fi
+}
+
+check_amd64() {
+    if [ "$(uname -m)" != "x86_64" ]; then
+        die "Este instalador solo soporta amd64/x86_64."
+    fi
+}
+
+check_uefi() {
+    if [ ! -d /sys/firmware/efi ]; then
+        die "Este instalador solo soporta arranque UEFI. Arranca la VM/PC en modo UEFI e intenta nuevamente."
+    fi
+}
+
+require_commands() {
+    local missing=()
+    local cmd
+
+    for cmd in debootstrap parted mkfs.vfat mkfs.ext4 wipefs sgdisk partprobe lsblk blkid chroot mount umount findmnt curl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing+=("$cmd")
+        fi
+    done
+
+    if [ "${#missing[@]}" -gt 0 ]; then
+        die "Faltan herramientas requeridas en el Live: ${missing[*]}"
+    fi
+}
+
+check_network() {
+    if ! curl -fsI --connect-timeout 10 "$DEBIAN_MIRROR/" >/dev/null 2>&1; then
+        die "No se pudo contactar $DEBIAN_MIRROR. Conecta internet antes de instalar."
+    fi
+}
+
+part_name() {
+    local disk="$1"
+    local num="$2"
+
+    if [[ "$disk" =~ [0-9]$ ]]; then
+        printf '%sp%s\n' "$disk" "$num"
+    else
+        printf '%s%s\n' "$disk" "$num"
+    fi
+}
+
+menu_disk() {
+    local menu=()
+    local name size type rm ro model desc choice idx selected
+
+    while read -r name size type rm ro model; do
+        [ "$type" = "disk" ] || continue
+        [ "$ro" = "0" ] || continue
+        [ -b "$name" ] || continue
+
+        desc="$size"
+        if [ -n "${model:-}" ]; then
+            desc="$desc $model"
+        fi
+        if [ "$rm" = "1" ]; then
+            desc="$desc removable"
+        fi
+
+        menu+=("$name" "$desc")
+    done < <(lsblk -d -n -p -o NAME,SIZE,TYPE,RM,RO,MODEL)
+
+    if [ "${#menu[@]}" -eq 0 ]; then
+        die "No se detectaron discos instalables."
+    fi
+
+    if has_whiptail; then
+        if ! choice="$(whiptail --title "$TITLE" --menu "Selecciona el disco donde instalar Condtux.\n\nADVERTENCIA: el disco completo sera borrado." 22 78 12 "${menu[@]}" 3>&1 1>&2 2>&3)"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+        printf '%s\n' "$choice"
+        return 0
+    fi
+
+    echo "Discos detectados:" >&2
+    idx=1
+    for ((i = 0; i < ${#menu[@]}; i += 2)); do
+        printf '  %d) %s - %s\n' "$idx" "${menu[$i]}" "${menu[$((i + 1))]}" >&2
+        idx=$((idx + 1))
+    done
+    printf 'Seleccion: ' >&2
+    read -r selected
+
+    if ! [[ "$selected" =~ ^[0-9]+$ ]]; then
+        die "Seleccion invalida."
+    fi
+    if [ "$selected" -lt 1 ] || [ "$selected" -gt $(( ${#menu[@]} / 2 )) ]; then
+        die "Seleccion fuera de rango."
+    fi
+
+    printf '%s\n' "${menu[$(( (selected - 1) * 2 ))]}"
+}
+
+ensure_target_free() {
+    if mountpoint -q "$TARGET"; then
+        die "$TARGET ya esta montado. Desmontalo antes de ejecutar el instalador."
+    fi
+}
+
+ensure_disk_not_in_use() {
+    local disk="$1"
+
+    if lsblk -nr -o MOUNTPOINT "$disk" | grep -q '/'; then
+        die "El disco $disk tiene particiones montadas. Desmontalo antes de instalar."
+    fi
+}
+
+confirm_destruction() {
+    local disk="$1"
+    local expected="BORRAR $disk"
+    local typed
+
+    if ! yesno "Vas a instalar Condtux en:\n\n$disk\n\nESTO BORRARA TODO EL DISCO.\n\nQuieres continuar?"; then
+        echo "Instalacion cancelada."
+        exit 0
+    fi
+
+    if ! typed="$(inputbox "Confirmacion fuerte requerida.\n\nEscribe exactamente:\n\n$expected")"; then
+        echo "Instalacion cancelada."
+        exit 0
+    fi
+
+    if [ "$typed" != "$expected" ]; then
+        die "Confirmacion incorrecta. No se modifico el disco."
+    fi
+}
+
+wait_for_partitions() {
+    local disk="$1"
+    local i
+
+    for i in $(seq 1 20); do
+        if [ -b "$EFI_PART" ] && [ -b "$ROOT_PART" ]; then
+            return 0
+        fi
+        partprobe "$disk" >/dev/null 2>&1 || true
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm settle >/dev/null 2>&1 || true
+        fi
+        sleep 1
+    done
+
+    die "No aparecieron las particiones esperadas: $EFI_PART y $ROOT_PART"
+}
+
+cleanup_mounts() {
+    set +e
+
+    if mountpoint -q "$TARGET"; then
+        umount -R "$TARGET" >/dev/null 2>&1 || true
+    fi
+}
+
+write_target_files() {
+    local root_uuid
+    local efi_uuid
+
+    root_uuid="$(blkid -s UUID -o value "$ROOT_PART")"
+    efi_uuid="$(blkid -s UUID -o value "$EFI_PART")"
+
+    cat > "$TARGET/etc/apt/sources.list" <<SRC
+deb http://deb.debian.org/debian trixie main
+deb http://deb.debian.org/debian trixie-updates main
+deb http://security.debian.org/debian-security trixie-security main
+SRC
+
+    cat > "$TARGET/etc/fstab" <<FSTAB
+UUID=$root_uuid / ext4 defaults,noatime 0 1
+UUID=$efi_uuid /boot/efi vfat umask=0077 0 1
+FSTAB
+}
+
+mount_chroot_filesystems() {
+    mount --rbind /dev "$TARGET/dev"
+    mount --make-rslave "$TARGET/dev"
+    mount -t proc proc "$TARGET/proc"
+    mount -t sysfs sys "$TARGET/sys"
+    mount --make-rslave "$TARGET/sys"
+    mount --rbind /run "$TARGET/run"
+    mount --make-rslave "$TARGET/run"
+    mount -t efivarfs efivarfs "$TARGET/sys/firmware/efi/efivars" 2>/dev/null || true
+}
+
+create_chroot_setup_script() {
+    cat > "$TARGET/tmp/condtux-chroot-setup.sh" <<'CHROOT'
+#!/bin/bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+export APT_LISTCHANGES_FRONTEND=none
+
+cat > /tmp/condtux-debconf.selections <<'DEBCONF'
+locales locales/default_environment_locale select es_CL.UTF-8
+locales locales/locales_to_be_generated multiselect es_CL.UTF-8 UTF-8, en_US.UTF-8 UTF-8
+keyboard-configuration keyboard-configuration/modelcode string pc105
+keyboard-configuration keyboard-configuration/layoutcode string latam
+keyboard-configuration keyboard-configuration/variantcode string
+keyboard-configuration keyboard-configuration/optionscode string
+console-setup console-setup/charmap47 select UTF-8
+console-setup console-setup/codeset47 select Lat15
+console-setup console-setup/fontface47 select Fixed
+console-setup console-setup/fontsize-fb47 select 8x16
+DEBCONF
+debconf-set-selections /tmp/condtux-debconf.selections || true
+
+apt update
+apt install -y \
+  linux-image-amd64 \
+  grub-efi-amd64 \
+  efibootmgr \
+  sudo \
+  network-manager \
+  locales \
+  console-setup \
+  keyboard-configuration \
+  nano \
+  curl \
+  wget \
+  ca-certificates \
+  openssh-server \
+  unattended-upgrades \
+  apt-listchanges \
+  fastfetch \
+  bash-completion \
+  iproute2 \
+  iputils-ping \
+  pciutils \
+  usbutils \
+  less
+
+echo condtux > /etc/hostname
+
+cat > /etc/hosts <<'HOSTS'
+127.0.0.1 localhost
+127.0.1.1 condtux
+
+::1 localhost ip6-localhost ip6-loopback
+HOSTS
+
+cat > /etc/os-release <<'OSR'
+PRETTY_NAME="Condtux 0.5 Minimal"
+NAME="Condtux"
+VERSION_ID="0.5"
+VERSION="0.5 Minimal"
+VERSION_CODENAME=trixie
+ID=condtux
+ID_LIKE=debian
+HOME_URL="https://github.com/jechugit/condtux-live-lab"
+SUPPORT_URL="https://repo-condtux.jeval.cl/"
+BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
+OSR
+
+echo "Condtux 0.5 Minimal" > /etc/condtux-release
+
+sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
+sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen
+update-locale LANG=es_CL.UTF-8
+
+cat > /etc/default/keyboard <<'KEYB'
+XKBMODEL="pc105"
+XKBLAYOUT="latam"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+KEYB
+
+ln -sf /usr/share/zoneinfo/America/Santiago /etc/localtime
+echo "America/Santiago" > /etc/timezone
+
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'AUTO'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+AUTO
+
+cat > /etc/apt/apt.conf.d/50unattended-upgrades <<'UPG'
+Unattended-Upgrade::Origins-Pattern {
+        "origin=Debian,codename=trixie-security";
+        "origin=Debian,codename=trixie-updates";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+UPG
+
+cat > /etc/apt/listchanges.conf <<'LISTCHANGES'
+[apt]
+frontend=none
+email_address=root
+confirm=false
+save_seen=/var/lib/apt/listchanges.db
+LISTCHANGES
+
+if ! id condtux >/dev/null 2>&1; then
+    useradd -m -s /bin/bash condtux
+fi
+echo "condtux:condtux" | chpasswd
+usermod -aG sudo condtux
+echo "root:condtux" | chpasswd
+
+systemctl enable NetworkManager
+systemctl enable ssh
+systemctl enable unattended-upgrades
+
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Condtux --recheck
+mkdir -p /boot/efi/EFI/BOOT
+cp -f /boot/efi/EFI/Condtux/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
+update-grub
+
+apt clean
+rm -f /tmp/condtux-debconf.selections
+CHROOT
+
+    chmod +x "$TARGET/tmp/condtux-chroot-setup.sh"
+}
+
+install_base() {
+    local disk="$1"
+
+    EFI_PART="$(part_name "$disk" 1)"
+    ROOT_PART="$(part_name "$disk" 2)"
+
+    trap cleanup_mounts EXIT
+
+    clear || true
+    echo "[ Condtux ] Instalando en $disk"
+    echo "[ Condtux ] EFI:  $EFI_PART"
+    echo "[ Condtux ] ROOT: $ROOT_PART"
+
+    ensure_target_free
+    ensure_disk_not_in_use "$disk"
+
+    echo "[ Condtux ] Borrando firmas anteriores..."
+    swapoff -a >/dev/null 2>&1 || true
+    wipefs -af "$disk" || true
+    sgdisk --zap-all "$disk" >/dev/null 2>&1 || true
+    partprobe "$disk" >/dev/null 2>&1 || true
+
+    echo "[ Condtux ] Creando tabla GPT..."
+    parted -s -a optimal "$disk" mklabel gpt
+    parted -s -a optimal "$disk" mkpart ESP fat32 1MiB 513MiB
+    parted -s "$disk" set 1 esp on
+    parted -s -a optimal "$disk" mkpart primary ext4 513MiB 100%
+
+    wait_for_partitions "$disk"
+
+    echo "[ Condtux ] Formateando particiones..."
+    mkfs.vfat -F32 -n CONDTUXEFI "$EFI_PART"
+    mkfs.ext4 -F -L CONDTUX_ROOT "$ROOT_PART"
+
+    echo "[ Condtux ] Montando sistema en $TARGET..."
+    mount "$ROOT_PART" "$TARGET"
+    mkdir -p "$TARGET/boot/efi"
+    mount "$EFI_PART" "$TARGET/boot/efi"
+
+    echo "[ Condtux ] Descargando sistema base Debian trixie..."
+    debootstrap --arch=amd64 "$DEBIAN_SUITE" "$TARGET" "$DEBIAN_MIRROR"
+
+    echo "[ Condtux ] Configurando repositorios y fstab..."
+    write_target_files
+
+    echo "[ Condtux ] Preparando chroot..."
+    mount_chroot_filesystems
+    create_chroot_setup_script
+
+    echo "[ Condtux ] Instalando kernel, GRUB, usuario y servicios..."
+    chroot "$TARGET" /bin/bash /tmp/condtux-chroot-setup.sh
+    rm -f "$TARGET/tmp/condtux-chroot-setup.sh"
+
+    echo "[ Condtux ] Sincronizando y desmontando..."
+    sync
+    umount -R "$TARGET"
+    trap - EXIT
+
+    echo
+    echo "======================================================"
+    echo " Condtux instalado correctamente."
+    echo " Usuario: condtux"
+    echo " Password temporal: condtux"
+    echo " Root password temporal: condtux"
+    echo "======================================================"
+    echo
+}
+
+main() {
+    local disk
+
+    need_root
+    check_amd64
+    check_uefi
+    require_commands
+
+    msg "Bienvenido al instalador de Condtux 0.5.\n\nInstalara Condtux descargando Debian trixie desde internet.\n\nSoporta solo UEFI, amd64 y disco completo."
+
+    check_network
+    disk="$(menu_disk)"
+    confirm_destruction "$disk"
+    install_base "$disk"
+
+    if yesno "Condtux fue instalado correctamente.\n\nQuieres reiniciar ahora?"; then
+        reboot
+    fi
+}
+
+main "$@"

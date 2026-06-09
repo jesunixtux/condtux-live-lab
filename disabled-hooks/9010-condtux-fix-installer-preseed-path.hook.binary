@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Corrigiendo rutas preseed del instalador..."
+
+# live-build mete automáticamente file=/cdrom/install/config/includes.installer/condtux.seed
+# Eso falla en Debian Installer, así que dejamos solo preseed/file=/preseed.cfg
+
+find binary -type f \( -name "*.cfg" -o -name "*.txt" \) -print | while read -r file; do
+    sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' "$file" || true
+    sed -i 's#file=/cdrom/install/config/includes.installer/condtux.seed ##g' "$file" || true
+    sed -i 's# file=/cdrom/preseed/condtux.seed##g' "$file" || true
+    sed -i 's#file=/cdrom/preseed/condtux.seed ##g' "$file" || true
+
+    # Evitar duplicados feos de auto=true priority=critical
+    sed -i 's#auto=true priority=critical vga=788 auto=true priority=critical#auto=true priority=critical vga=788#g' "$file" || true
+    sed -i 's#vga=788 auto=true priority=critical preseed/file=/preseed.cfg#vga=788 auto=true priority=critical preseed/file=/preseed.cfg#g' "$file" || true
+done
+
+echo "[ Condtux ] Rutas preseed corregidas."

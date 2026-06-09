@@ -1,52 +1,26 @@
 #!/bin/sh
 set -e
 
-echo "[ Condtux ] Configurando repositorios APT híbridos..."
+echo "[ Condtux ] Configurando repositorios APT Debian limpios..."
 
-mkdir -p /etc/apt/sources.list.d
-mkdir -p /etc/apt/preferences.d
+cat > /etc/apt/sources.list <<'EOF'
+deb http://deb.debian.org/debian trixie main
+deb http://deb.debian.org/debian trixie-updates main
+deb http://security.debian.org/debian-security trixie-security main
+EOF
 
-cat > /etc/apt/sources.list <<'APT'
-# Condtux uses /etc/apt/sources.list.d/*.sources
-APT
+rm -f /etc/apt/sources.list.d/condtux.sources
 
-cat > /etc/apt/sources.list.d/condtux.sources <<'APT'
-Types: deb
-URIs: https://repo-condtux.jeval.cl/apt
-Suites: trixie
-Components: main
-Architectures: amd64
-Trusted: yes
+cat > /etc/apt/sources.list.d/condtux.sources.disabled <<'EOF'
+# Condtux repo - desactivado temporalmente en la ISO 0.5.
+# Se activará cuando repo-condtux.jeval.cl tenga Release firmado y keyring.
+#
+# Types: deb
+# URIs: https://repo-condtux.jeval.cl/apt
+# Suites: trixie
+# Components: main
+# Architectures: amd64
+# Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
+EOF
 
-Types: deb
-URIs: http://deb.debian.org/debian
-Suites: trixie trixie-updates
-Components: main
-Architectures: amd64
-
-Types: deb
-URIs: http://security.debian.org/debian-security
-Suites: trixie-security
-Components: main
-Architectures: amd64
-APT
-
-cat > /etc/apt/preferences.d/condtux.pref <<'EOF_PREF'
-Package: *
-Pin: origin repo-condtux.jeval.cl
-Pin-Priority: 700
-
-Package: *
-Pin: release o=Debian
-Pin-Priority: 500
-EOF_PREF
-
-cat > /etc/apt/apt.conf.d/99condtux <<'APTCONF'
-APT::Install-Recommends "false";
-APT::Install-Suggests "false";
-Acquire::Retries "3";
-APTCONF
-
-apt-get clean || true
-
-echo "[ Condtux ] Repositorios híbridos listos."
+echo "[ Condtux ] Repositorios Debian listos. Repo Condtux desactivado temporalmente."

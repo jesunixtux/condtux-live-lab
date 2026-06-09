@@ -1,39 +1,59 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
-cd "$HOME/condtux-live-lab"
+cd "$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "[ Condtux Live 0.5 ] Limpiando build anterior..."
-sudo lb clean --purge || true
+PROJECT_NAME="Condtux Live 0.5"
+ISO_NAME="condtux-0.5-minimal-orange-amd64.iso"
+ISO_OUTPUT="output/${ISO_NAME}"
 
-echo "[ Condtux Live 0.5 ] Borrando cache vieja..."
-sudo rm -rf .build chroot binary cache
-rm -f *.iso live-image-* binary.*
-rm -f output/*.iso
+echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
+sudo lb clean --all || true
 
-echo "[ Condtux Live 0.5 ] Reconfigurando live-build..."
+echo "[ ${PROJECT_NAME} ] Borrando binarios ISO viejos..."
+rm -f *.iso live-image-* binary.* chroot.files chroot.packages.install chroot.packages.live
+rm -f output/*.iso output/*.sha256
+mkdir -p output logs
+
+echo "[ ${PROJECT_NAME} ] Reconfigurando live-build..."
+
 lb config \
   --distribution trixie \
   --architectures amd64 \
   --archive-areas "main" \
   --binary-images iso-hybrid \
-  --debian-installer-preseedfile config/includes.installer/condtux.seed \
   --bootloaders "syslinux,grub-efi" \
-  --debian-installer true \
-  --debian-installer-gui false \
+  --debian-installer none \
   --iso-volume "CONDTUX05" \
   --iso-application "Condtux 0.5 Minimal Orange" \
   --iso-preparer "Condtux Project" \
-  --mirror-bootstrap http://deb.debian.org/debian \
-  --mirror-chroot http://deb.debian.org/debian \
-  --mirror-binary http://deb.debian.org/debian \
+  --mirror-bootstrap http://cdn-fastly.deb.debian.org/debian \
+  --mirror-chroot http://cdn-fastly.deb.debian.org/debian \
+  --mirror-binary http://cdn-fastly.deb.debian.org/debian \
   --security true \
   --mirror-chroot-security http://security.debian.org/debian-security \
   --mirror-binary-security http://security.debian.org/debian-security \
   --apt-recommends false \
-  --bootappend-install "preseed/file=/cdrom/preseed/condtux.seed" \
   --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
-echo "[ Condtux Live 0.5 ] Construyendo ISO..."
+
+echo "[ ${PROJECT_NAME} ] Deshabilitando Debian Installer y limpiando residuos..."
+
+# live-build guarda configuración persistente en config/binary; limpiamos
+# rutas viejas del Debian Installer para que no reaparezcan menús rotos.
+if [ -f config/binary ]; then
+  sed -i 's#^LB_DEBIAN_INSTALLER=.*#LB_DEBIAN_INSTALLER="none"#' config/binary
+  sed -i 's#^LB_DEBIAN_INSTALLER_PRESEEDFILE=.*#LB_DEBIAN_INSTALLER_PRESEEDFILE=""#' config/binary
+  sed -i 's#^LB_BOOTAPPEND_INSTALL=.*#LB_BOOTAPPEND_INSTALL=""#' config/binary
+  sed -i 's#preseed/file=/preseed.cfg#preseed/file=/preseed.cfg#g' config/binary
+  sed -i 's#preseed/file=/preseed.cfg file=/cdrom/install/config/includes.installer/condtux.seed#preseed/file=/preseed.cfg#g' config/binary
+  sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' config/binary
+  sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' config/binary
+fi
+
+echo "[ ${PROJECT_NAME} ] Configuración final del instalador Debian:"
+grep "LB_DEBIAN_INSTALLER" config/binary || true
+
+echo "[ ${PROJECT_NAME} ] Construyendo ISO..."
 sudo lb build
 
 mkdir -p output
@@ -41,13 +61,13 @@ mkdir -p output
 ISO_FOUND="$(find . -maxdepth 1 -type f \( -name 'live-image-amd64.hybrid.iso' -o -name 'binary.hybrid.iso' -o -name '*.iso' \) | head -n 1)"
 
 if [ -z "$ISO_FOUND" ]; then
-    echo "No se encontró ISO generada."
+    echo "[ ${PROJECT_NAME} ] ERROR: No se encontró ISO generada."
     exit 1
 fi
 
-cp -v "$ISO_FOUND" output/condtux-0.5-minimal-orange-amd64.iso
+cp -v "$ISO_FOUND" "$ISO_OUTPUT"
 
 echo
-echo "[ Condtux Live 0.5 ] ISO lista:"
+echo "[ ${PROJECT_NAME} ] ISO lista:"
 ls -lh output/
-sha256sum output/condtux-0.5-minimal-orange-amd64.iso | tee output/condtux-0.5-minimal-orange-amd64.iso.sha256
+sha256sum "$ISO_OUTPUT" | tee "${ISO_OUTPUT}.sha256"

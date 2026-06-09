@@ -1,26 +1,44 @@
-# live-build outputs
-.build/
-.cache/
-cache/
-chroot/
-binary/
-output/
-logs/
+# live-build generated state
+/.build/
+/binary/
+/cache/
+/chroot/
+/source/
 
-# ISO/output files
-*.iso
-*.img
-*.raw
-*.qcow2
-live-image-*
-binary.*
+# Build outputs
+/output/
+/logs/
+/live-image-*
+/binary.*
+/binary.modified_timestamps
+/chroot.files
+/chroot.packages.*
+/*.iso
+/*.img
+/*.raw
+/*.qcow2
+/*.vdi
+/*.vmdk
 
-# Logs temporales
-wget-log*
+# Temporary downloads and logs
+/wget-log*
 *.log
 
-# Editor / sistema
+# Local backups and patch leftovers
+*.bak
+*.bak.*
+*.bak-*
+*.orig
+*.rej
 *~
+
+# Editor and OS noise
 *.swp
 *.swo
 .DS_Store
+Thumbs.db
+
+# Local-only tool state
+.codex/
+.vscode/
+.idea/

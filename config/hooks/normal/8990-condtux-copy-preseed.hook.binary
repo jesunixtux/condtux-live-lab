@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Copiando preseed al árbol binary..."
+
+mkdir -p preseed
+mkdir -p install/config/includes.installer
+
+if [ -f config/includes.installer/condtux.seed ]; then
+    SRC="config/includes.installer"
+elif [ -f ../config/includes.installer/condtux.seed ]; then
+    SRC="../config/includes.installer"
+else
+    echo "[ Condtux ] ERROR: no se encontró condtux.seed"
+    exit 1
+fi
+
+cp -v "$SRC/condtux.seed" preseed/condtux.seed
+cp -v "$SRC/condtux.seed" install/config/includes.installer/condtux.seed
+
+if [ -f "$SRC/condtux-late.sh" ]; then
+    cp -v "$SRC/condtux-late.sh" preseed/condtux-late.sh
+    chmod +x preseed/condtux-late.sh
+else
+    echo "[ Condtux ] ERROR: no se encontró condtux-late.sh"
+    exit 1
+fi
+
+echo "[ Condtux ] Preseed copiado correctamente:"
+ls -l preseed/condtux.seed
+ls -l preseed/condtux-late.sh
+ls -l install/config/includes.installer/condtux.seed

@@ -1,0 +1,36 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Verificando entradas Debian Installer en GRUB..."
+
+if [ -f install/vmlinuz ] && [ -f install/initrd.gz ]; then
+    echo "[ Condtux ] Debian Installer completo; no se ocultan entradas."
+    exit 0
+fi
+
+echo "[ Condtux ] Debian Installer incompleto o ausente; ocultando entradas rotas."
+
+for cfg in boot/grub/grub.cfg boot/grub/loopback.cfg; do
+    [ -f "$cfg" ] || continue
+
+    sed -i '/^# Installer (if any)$/,/^fi$/c\
+# Debian Installer disabled: Condtux uses sudo condtux-install from the Live session.
+' "$cfg" || true
+
+    sed -i '/Alternate graphical installer/,/# }/d' "$cfg" || true
+    sed -i '/Alternate textual installer/,/# }/d' "$cfg" || true
+done
+
+for cfg in boot/grub/install_start.cfg boot/grub/install.cfg; do
+    [ -f "$cfg" ] || continue
+    {
+        echo "# Debian Installer disabled."
+        echo "# Start the Live session and run: sudo condtux-install"
+    } > "$cfg"
+done
+
+find boot/grub isolinux -type f -name "*.cfg" -print 2>/dev/null | while read -r cfg; do
+    sed -i '/\/install\/vmlinuz/d; /\/install\/initrd.gz/d' "$cfg" || true
+done
+
+echo "[ Condtux ] Entradas Debian Installer ocultas."

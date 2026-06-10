@@ -8,6 +8,8 @@
 # Build outputs
 /output/
 /logs/
+/packages/*/build/
+/packages/*/dist/
 /live-image-*
 /binary.*
 /binary.modified_timestamps

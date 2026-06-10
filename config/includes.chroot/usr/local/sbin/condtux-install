@@ -4,16 +4,20 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
 
-TITLE="Condtux Installer 0.6"
+TITLE="Condtux Installer 0.7"
 TARGET="/mnt"
 DEBIAN_SUITE="trixie"
 DEBIAN_MIRROR="http://deb.debian.org/debian"
 CONDTUX_REPO_URL="https://repo-condtux.jeval.cl/apt"
 CONDTUX_KEYRING="/usr/share/keyrings/condtux-archive-keyring.gpg"
 HOSTNAME="condtux"
-USERNAME="condtux"
-TEMP_PASSWORD="condtux"
+
 INSTALL_PROFILE="minimal"
+INSTALL_USERNAME="usuario"
+INSTALL_FULLNAME="Usuario Condtux"
+ACCOUNT_MODE="sudo"
+USER_PASSWORD_HASH=""
+ROOT_PASSWORD_HASH=""
 
 EFI_PART=""
 ROOT_PART=""
@@ -36,12 +40,12 @@ yesno() {
     local text="$1"
 
     if has_whiptail; then
-        whiptail --title "$TITLE" --yesno "$text" 14 76
+        whiptail --title "$TITLE" --yesno "$text" 16 78
     else
         printf '%s [s/N] ' "$text"
         read -r answer
         case "$answer" in
-            s|S|si|SI|Si|yes|YES|Yes) return 0 ;;
+            s|S|si|SI|Si|yes|YES|Yes|y|Y) return 0 ;;
             *) return 1 ;;
         esac
     fi
@@ -49,14 +53,42 @@ yesno() {
 
 inputbox() {
     local text="$1"
+    local default_value="${2:-}"
 
     if has_whiptail; then
-        whiptail --title "$TITLE" --inputbox "$text" 11 76 3>&1 1>&2 2>&3
+        whiptail --title "$TITLE" --inputbox "$text" 11 76 "$default_value" 3>&1 1>&2 2>&3
+    else
+        if [ -n "$default_value" ]; then
+            printf '%s [%s]\n> ' "$text" "$default_value" >&2
+        else
+            printf '%s\n> ' "$text" >&2
+        fi
+        read -r answer
+        printf '%s\n' "${answer:-$default_value}"
+    fi
+}
+
+passwordbox() {
+    local text="$1"
+
+    if has_whiptail; then
+        whiptail --title "$TITLE" --passwordbox "$text" 11 76 3>&1 1>&2 2>&3
     else
         printf '%s\n> ' "$text" >&2
+        stty -echo 2>/dev/null || true
         read -r answer
+        stty echo 2>/dev/null || true
+        printf '\n' >&2
         printf '%s\n' "$answer"
     fi
+}
+
+die() {
+    local text="$1"
+
+    printf 'ERROR: %s\n' "$text" >&2
+    msg "$text" || true
+    exit 1
 }
 
 profile_label() {
@@ -66,11 +98,18 @@ profile_label() {
     esac
 }
 
+account_mode_label() {
+    case "$ACCOUNT_MODE" in
+        root) printf 'Usuario normal + root separado' ;;
+        *) printf 'Usuario administrador con sudo' ;;
+    esac
+}
+
 select_install_profile() {
     local choice selected
 
     if has_whiptail; then
-        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.6.\n\nEsto se define antes de tocar el disco." 17 78 2 \
+        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.7.\n\nEsto se define antes de tocar el disco." 17 78 2 \
             minimal "Minimal sin escritorio, ideal para terminal o servidor" \
             xfce "Escritorio XFCE con LightDM y herramientas graficas" \
             3>&1 1>&2 2>&3)"; then
@@ -94,12 +133,114 @@ select_install_profile() {
     esac
 }
 
-die() {
-    local text="$1"
+validate_username() {
+    local value="$1"
 
-    printf 'ERROR: %s\n' "$text" >&2
-    msg "$text" || true
-    exit 1
+    [[ "$value" =~ ^[a-z_][a-z0-9_-]*$ ]] || return 1
+    case "$value" in
+        root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt)
+            return 1
+            ;;
+    esac
+}
+
+ask_username() {
+    local value
+
+    while true; do
+        if ! value="$(inputbox "Nombre de usuario para el sistema instalado.\n\nUsa minusculas, numeros, guion o guion bajo." "$INSTALL_USERNAME")"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+
+        if validate_username "$value"; then
+            INSTALL_USERNAME="$value"
+            INSTALL_FULLNAME="$(printf 'Usuario %s' "$INSTALL_USERNAME")"
+            return 0
+        fi
+
+        msg "Nombre de usuario invalido.\n\nEjemplo valido: jesus, condtux, usuario_1"
+    done
+}
+
+ask_password_hash() {
+    local label="$1"
+    local pass1 pass2
+
+    while true; do
+        if ! pass1="$(passwordbox "Password para $label")"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+        if ! pass2="$(passwordbox "Repite el password para $label")"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+
+        if [ -z "$pass1" ]; then
+            msg "El password no puede quedar vacio."
+            continue
+        fi
+        if [ "$pass1" != "$pass2" ]; then
+            msg "Los passwords no coinciden. Intenta nuevamente."
+            continue
+        fi
+
+        printf '%s' "$pass1" | openssl passwd -6 -stdin
+        unset pass1 pass2
+        return 0
+    done
+}
+
+select_account_mode() {
+    local choice selected
+
+    if has_whiptail; then
+        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como administrar el sistema instalado." 17 78 2 \
+            sudo "Mi usuario sera administrador con sudo; root queda bloqueado" \
+            root "Mi usuario sera normal y root tendra password separado" \
+            3>&1 1>&2 2>&3)"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+        ACCOUNT_MODE="$choice"
+        return 0
+    fi
+
+    echo "Modo de administracion:" >&2
+    echo "  1) Mi usuario administra con sudo (root bloqueado)" >&2
+    echo "  2) Usuario normal + cuenta root separada" >&2
+    printf 'Seleccion [1]: ' >&2
+    read -r selected
+
+    case "${selected:-1}" in
+        1|sudo|SUDO) ACCOUNT_MODE="sudo" ;;
+        2|root|ROOT) ACCOUNT_MODE="root" ;;
+        *) die "Modo de administracion invalido." ;;
+    esac
+}
+
+collect_account_settings() {
+    local fullname
+
+    ask_username
+
+    if ! fullname="$(inputbox "Nombre visible del usuario." "$INSTALL_FULLNAME")"; then
+        echo "Instalacion cancelada."
+        exit 0
+    fi
+    INSTALL_FULLNAME="${fullname:-$INSTALL_FULLNAME}"
+    INSTALL_FULLNAME="${INSTALL_FULLNAME//:/ }"
+
+    USER_PASSWORD_HASH="$(ask_password_hash "el usuario $INSTALL_USERNAME")"
+
+    select_account_mode
+
+    if [ "$ACCOUNT_MODE" = "root" ]; then
+        ROOT_PASSWORD_HASH="$(ask_password_hash "root")"
+    else
+        ROOT_PASSWORD_HASH=""
+    fi
 }
 
 need_root() {
@@ -125,7 +266,7 @@ require_commands() {
     local missing=()
     local cmd
 
-    for cmd in debootstrap parted mkfs.vfat mkfs.ext4 wipefs sgdisk partprobe lsblk blkid chroot mount umount findmnt curl; do
+    for cmd in debootstrap parted mkfs.vfat mkfs.ext4 wipefs sgdisk partprobe lsblk blkid chroot mount umount findmnt curl openssl; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing+=("$cmd")
         fi
@@ -153,6 +294,18 @@ part_name() {
     fi
 }
 
+disk_line() {
+    local disk="$1"
+
+    lsblk -d -n -p -o NAME,SIZE,MODEL "$disk" 2>/dev/null | sed 's/[[:space:]][[:space:]]*/ /g'
+}
+
+disk_children() {
+    local disk="$1"
+
+    lsblk -n -p -o NAME,SIZE,FSTYPE,MOUNTPOINT "$disk" 2>/dev/null | sed -n '1,12p'
+}
+
 menu_disk() {
     local menu=()
     local name size type rm ro model desc choice idx selected
@@ -178,7 +331,7 @@ menu_disk() {
     fi
 
     if has_whiptail; then
-        if ! choice="$(whiptail --title "$TITLE" --menu "Selecciona el disco donde instalar Condtux.\n\nADVERTENCIA: el disco completo sera borrado." 22 78 12 "${menu[@]}" 3>&1 1>&2 2>&3)"; then
+        if ! choice="$(whiptail --title "$TITLE" --menu "Selecciona el disco donde instalar Condtux.\n\nEl disco elegido se borrara completo." 22 78 12 "${menu[@]}" 3>&1 1>&2 2>&3)"; then
             echo "Instalacion cancelada."
             exit 0
         fi
@@ -205,6 +358,21 @@ menu_disk() {
     printf '%s\n' "${menu[$(( (selected - 1) * 2 ))]}"
 }
 
+confirm_disk_choice() {
+    local disk="$1"
+    local profile mode summary layout
+
+    profile="$(profile_label)"
+    mode="$(account_mode_label)"
+    summary="$(disk_line "$disk")"
+    layout="$(disk_children "$disk")"
+
+    if ! yesno "Confirma el disco de instalacion.\n\nDisco seleccionado:\n$summary\n\nContenido actual:\n$layout\n\nPerfil: $profile\nUsuario: $INSTALL_USERNAME\nPermisos: $mode\n\nCondtux creara:\n- EFI FAT32 512 MiB\n- root ext4 con el resto del disco\n\nEsto borrara todo el disco seleccionado.\n\nEstas seguro de que este es el disco correcto?"; then
+        echo "Instalacion cancelada."
+        exit 0
+    fi
+}
+
 ensure_target_free() {
     if mountpoint -q "$TARGET"; then
         die "$TARGET ya esta montado. Desmontalo antes de ejecutar el instalador."
@@ -216,29 +384,6 @@ ensure_disk_not_in_use() {
 
     if lsblk -nr -o MOUNTPOINT "$disk" | grep -q '/'; then
         die "El disco $disk tiene particiones montadas. Desmontalo antes de instalar."
-    fi
-}
-
-confirm_destruction() {
-    local disk="$1"
-    local expected="BORRAR $disk"
-    local typed
-    local profile
-
-    profile="$(profile_label)"
-
-    if ! yesno "Resumen de instalacion:\n\nPerfil: $profile\nDisco: $disk\nParticiones: EFI 512 MiB + root ext4\n\nESTO BORRARA TODO EL DISCO.\n\nQuieres continuar?"; then
-        echo "Instalacion cancelada."
-        exit 0
-    fi
-
-    if ! typed="$(inputbox "Confirmacion fuerte requerida.\n\nEscribe exactamente:\n\n$expected")"; then
-        echo "Instalacion cancelada."
-        exit 0
-    fi
-
-    if [ "$typed" != "$expected" ]; then
-        die "Confirmacion incorrecta. No se modifico el disco."
     fi
 }
 
@@ -313,6 +458,7 @@ SRC
 }
 
 mount_chroot_filesystems() {
+    mkdir -p "$TARGET/dev" "$TARGET/proc" "$TARGET/sys" "$TARGET/run" "$TARGET/sys/firmware/efi/efivars"
     mount --rbind /dev "$TARGET/dev"
     mount --make-rslave "$TARGET/dev"
     mount -t proc proc "$TARGET/proc"
@@ -323,6 +469,18 @@ mount_chroot_filesystems() {
     mount -t efivarfs efivarfs "$TARGET/sys/firmware/efi/efivars" 2>/dev/null || true
 }
 
+write_install_answers() {
+    {
+        printf 'INSTALL_PROFILE=%q\n' "$INSTALL_PROFILE"
+        printf 'INSTALL_USERNAME=%q\n' "$INSTALL_USERNAME"
+        printf 'INSTALL_FULLNAME=%q\n' "$INSTALL_FULLNAME"
+        printf 'ACCOUNT_MODE=%q\n' "$ACCOUNT_MODE"
+        printf 'USER_PASSWORD_HASH=%q\n' "$USER_PASSWORD_HASH"
+        printf 'ROOT_PASSWORD_HASH=%q\n' "$ROOT_PASSWORD_HASH"
+    } > "$TARGET/tmp/condtux-install-answers"
+    chmod 0600 "$TARGET/tmp/condtux-install-answers"
+}
+
 create_chroot_setup_script() {
     cat > "$TARGET/tmp/condtux-chroot-setup.sh" <<'CHROOT'
 #!/bin/bash
@@ -331,7 +489,13 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
 
-INSTALL_PROFILE="$(cat /tmp/condtux-install-profile 2>/dev/null || echo minimal)"
+if [ ! -f /tmp/condtux-install-answers ]; then
+    echo "Falta /tmp/condtux-install-answers" >&2
+    exit 1
+fi
+
+# shellcheck disable=SC1091
+. /tmp/condtux-install-answers
 
 case "$INSTALL_PROFILE" in
   xfce)
@@ -382,6 +546,14 @@ apt install -y \
   usbutils \
   less
 
+install_condtux_repo_test() {
+  if apt-cache show condtux-repo-test >/dev/null 2>&1; then
+    apt install -y condtux-repo-test
+  else
+    echo "[ Condtux ] Aviso: condtux-repo-test no esta disponible en el repo Condtux."
+  fi
+}
+
 install_xfce_desktop() {
   apt install -y \
     task-xfce-desktop \
@@ -413,6 +585,31 @@ XFCE
   systemctl enable lightdm || true
 }
 
+configure_accounts() {
+  if [ "$INSTALL_USERNAME" != "condtux" ] && id condtux >/dev/null 2>&1; then
+    userdel -r condtux >/dev/null 2>&1 || true
+  fi
+
+  rm -f /etc/sudoers.d/condtux-live /etc/sudoers.d/condtux
+  rm -rf /etc/systemd/system/getty@tty1.service.d
+
+  if ! id "$INSTALL_USERNAME" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash -c "$INSTALL_FULLNAME" "$INSTALL_USERNAME"
+  fi
+
+  printf '%s:%s\n' "$INSTALL_USERNAME" "$USER_PASSWORD_HASH" | chpasswd -e
+
+  if [ "$ACCOUNT_MODE" = "root" ]; then
+    gpasswd -d "$INSTALL_USERNAME" sudo >/dev/null 2>&1 || true
+    printf 'root:%s\n' "$ROOT_PASSWORD_HASH" | chpasswd -e
+  else
+    usermod -aG sudo "$INSTALL_USERNAME"
+    passwd -l root >/dev/null 2>&1 || true
+  fi
+}
+
+install_condtux_repo_test
+
 if [ "$INSTALL_PROFILE" = "xfce" ]; then
   install_xfce_desktop
 fi
@@ -427,10 +624,10 @@ cat > /etc/hosts <<'HOSTS'
 HOSTS
 
 cat > /etc/os-release <<OSR
-PRETTY_NAME="Condtux 0.6 ${CONDTUX_FLAVOR}"
+PRETTY_NAME="Condtux 0.7 ${CONDTUX_FLAVOR}"
 NAME="Condtux"
-VERSION_ID="0.6"
-VERSION="0.6 ${CONDTUX_FLAVOR}"
+VERSION_ID="0.7"
+VERSION="0.7 ${CONDTUX_FLAVOR}"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian
@@ -439,7 +636,7 @@ SUPPORT_URL="https://repo-condtux.jeval.cl/"
 BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
 OSR
 
-echo "Condtux 0.6 ${CONDTUX_FLAVOR}" > /etc/condtux-release
+echo "Condtux 0.7 ${CONDTUX_FLAVOR}" > /etc/condtux-release
 
 sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
 sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
@@ -478,12 +675,7 @@ confirm=false
 save_seen=/var/lib/apt/listchanges.db
 LISTCHANGES
 
-if ! id condtux >/dev/null 2>&1; then
-    useradd -m -s /bin/bash condtux
-fi
-echo "condtux:condtux" | chpasswd
-usermod -aG sudo condtux
-echo "root:condtux" | chpasswd
+configure_accounts
 
 systemctl enable NetworkManager
 systemctl enable ssh
@@ -495,7 +687,7 @@ cp -f /boot/efi/EFI/Condtux/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
 update-grub
 
 apt clean
-rm -f /tmp/condtux-debconf.selections /tmp/condtux-install-profile
+rm -f /tmp/condtux-debconf.selections /tmp/condtux-install-answers
 CHROOT
 
     chmod +x "$TARGET/tmp/condtux-chroot-setup.sh"
@@ -512,6 +704,8 @@ install_base() {
     clear || true
     echo "[ Condtux ] Instalando en $disk"
     echo "[ Condtux ] Perfil: $(profile_label)"
+    echo "[ Condtux ] Usuario: $INSTALL_USERNAME"
+    echo "[ Condtux ] Permisos: $(account_mode_label)"
     echo "[ Condtux ] EFI:  $EFI_PART"
     echo "[ Condtux ] ROOT: $ROOT_PART"
 
@@ -551,11 +745,11 @@ install_base() {
     echo "[ Condtux ] Preparando chroot..."
     mount_chroot_filesystems
     create_chroot_setup_script
-    printf '%s\n' "$INSTALL_PROFILE" > "$TARGET/tmp/condtux-install-profile"
+    write_install_answers
 
     echo "[ Condtux ] Instalando kernel, GRUB, usuario, servicios y perfil $(profile_label)..."
     chroot "$TARGET" /bin/bash /tmp/condtux-chroot-setup.sh
-    rm -f "$TARGET/tmp/condtux-chroot-setup.sh"
+    rm -f "$TARGET/tmp/condtux-chroot-setup.sh" "$TARGET/tmp/condtux-install-answers"
 
     echo "[ Condtux ] Sincronizando y desmontando..."
     sync
@@ -566,9 +760,8 @@ install_base() {
     echo "======================================================"
     echo " Condtux instalado correctamente."
     echo " Perfil: $(profile_label)"
-    echo " Usuario: condtux"
-    echo " Password temporal: condtux"
-    echo " Root password temporal: condtux"
+    echo " Usuario: $INSTALL_USERNAME"
+    echo " Permisos: $(account_mode_label)"
     echo "======================================================"
     echo
 }
@@ -581,12 +774,13 @@ main() {
     check_uefi
     require_commands
 
-    msg "Bienvenido al instalador de Condtux 0.6.\n\nInstalara Condtux descargando Debian trixie desde internet.\n\nSoporta solo UEFI, amd64 y disco completo."
+    msg "Bienvenido al instalador de Condtux 0.7.\n\nInstalara Condtux descargando Debian trixie desde internet.\n\nSoporta solo UEFI, amd64 y disco completo."
 
     select_install_profile
+    collect_account_settings
     check_network
     disk="$(menu_disk)"
-    confirm_destruction "$disk"
+    confirm_disk_choice "$disk"
     install_base "$disk"
 
     if yesno "Condtux fue instalado correctamente.\n\nQuieres reiniciar ahora?"; then

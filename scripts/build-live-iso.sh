@@ -3,8 +3,8 @@ set -e
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
-PROJECT_NAME="Condtux Live 0.6"
-ISO_NAME="condtux-0.6-amd64.iso"
+PROJECT_NAME="Condtux Live 0.7"
+ISO_NAME="condtux-0.7-amd64.iso"
 ISO_OUTPUT="output/${ISO_NAME}"
 
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
@@ -24,8 +24,8 @@ lb config \
   --binary-images iso-hybrid \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \
-  --iso-volume "CONDTUX06" \
-  --iso-application "Condtux 0.6 Live" \
+  --iso-volume "CONDTUX07" \
+  --iso-application "Condtux 0.7 Live" \
   --iso-preparer "Condtux Project" \
   --mirror-bootstrap http://cdn-fastly.deb.debian.org/debian \
   --mirror-chroot http://cdn-fastly.deb.debian.org/debian \

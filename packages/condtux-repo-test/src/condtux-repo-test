@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "Condtux repo test OK"
+echo "Repository: https://repo-condtux.jeval.cl/apt"
+
+if command -v dpkg-query >/dev/null 2>&1; then
+    version="$(dpkg-query -W -f='${Version}' condtux-repo-test 2>/dev/null || true)"
+    if [ -n "$version" ]; then
+        echo "Package: condtux-repo-test $version"
+    fi
+fi
+
+if command -v apt-cache >/dev/null 2>&1; then
+    echo
+    apt-cache policy condtux-repo-test | sed -n '1,12p'
+fi

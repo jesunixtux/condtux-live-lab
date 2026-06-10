@@ -71,7 +71,7 @@ LB_HDD_SIZE="auto"
 LB_HDD_PARTITION_START=""
 
 # Set iso author
-LB_ISO_APPLICATION="Condtux 0.6 Live"
+LB_ISO_APPLICATION="Condtux 0.7 Live"
 
 # Set iso preparer
 LB_ISO_PREPARER="Condtux Project"
@@ -80,7 +80,7 @@ LB_ISO_PREPARER="Condtux Project"
 LB_ISO_PUBLISHER="Debian Live project; https://wiki.debian.org/DebianLive; debian-live@lists.debian.org"
 
 # Set iso volume (max 32 chars)
-LB_ISO_VOLUME="CONDTUX06"
+LB_ISO_VOLUME="CONDTUX07"
 
 # Set jffs2 eraseblock size
 LB_JFFS2_ERASEBLOCK=""

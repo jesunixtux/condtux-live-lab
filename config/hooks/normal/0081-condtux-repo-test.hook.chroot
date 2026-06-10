@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+echo "[ Condtux ] Probando repo Condtux con condtux-repo-test..."
+
+apt-get update
+apt-get install -y condtux-repo-test
+condtux-repo-test || true
+
+echo "[ Condtux ] Repo Condtux probado correctamente."

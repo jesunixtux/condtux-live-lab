@@ -9,6 +9,7 @@ ISO_OUTPUT="output/${ISO_NAME}"
 
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
 sudo lb clean --all || true
+sudo rm -rf cache/bootstrap cache/packages.bootstrap cache/packages.chroot cache/packages.binary
 
 echo "[ ${PROJECT_NAME} ] Borrando binarios ISO viejos..."
 rm -f *.iso live-image-* binary.* chroot.files chroot.packages.install chroot.packages.live
@@ -35,6 +36,7 @@ lb config \
   --security true \
   --mirror-chroot-security https://security.debian.org/debian-security \
   --mirror-binary-security https://security.debian.org/debian-security \
+  --debootstrap-options "--include=ca-certificates" \
   --apt-recommends false \
   --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
 

@@ -19,7 +19,8 @@ apt-get install -y --no-install-recommends \
     lightdm \
     lightdm-gtk-greeter \
     network-manager-gnome \
-    policykit-1 \
+    polkitd \
+    pkexec \
     dbus-x11 \
     pavucontrol \
     pipewire-audio \

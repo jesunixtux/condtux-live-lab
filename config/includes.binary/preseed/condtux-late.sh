@@ -59,13 +59,13 @@ EOF
 
 cat > /etc/apt/sources.list.d/debian.sources <<'EOF'
 Types: deb
-URIs: http://deb.debian.org/debian
+URIs: https://deb.debian.org/debian
 Suites: trixie trixie-updates
 Components: main
 Architectures: amd64
 
 Types: deb
-URIs: http://security.debian.org/debian-security
+URIs: https://security.debian.org/debian-security
 Suites: trixie-security
 Components: main
 Architectures: amd64

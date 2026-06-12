@@ -22,10 +22,7 @@ if echo "$LANG_CODE" | grep -qi '^es'; then
     TXT_TITLE="Primera configuración de Condtux"
     TXT_ADMIN="¿Quieres que tu usuario principal tenga permisos de administrador con sudo?"
     TXT_ROOT="¿Quieres activar una cuenta root separada?"
-    TXT_DESKTOP="¿Quieres instalar una interfaz gráfica XFCE?"
-    TXT_THEME="Elige el tema visual para XFCE"
-    TXT_LIGHT="Claro"
-    TXT_DARK="Oscuro"
+    TXT_DESKTOP="¿Quieres instalar el escritorio XFCE de Condtux?"
     TXT_DONE="Configuración completada. Reinicia el sistema si instalaste XFCE."
     TXT_YES="Sí"
     TXT_NO="No"
@@ -33,10 +30,7 @@ else
     TXT_TITLE="Condtux First Configuration"
     TXT_ADMIN="Do you want your main user to have administrator permissions with sudo?"
     TXT_ROOT="Do you want to enable a separate root account?"
-    TXT_DESKTOP="Do you want to install the XFCE graphical desktop?"
-    TXT_THEME="Choose the visual theme for XFCE"
-    TXT_LIGHT="Light"
-    TXT_DARK="Dark"
+    TXT_DESKTOP="Do you want to install the Condtux XFCE desktop?"
     TXT_DONE="Configuration completed. Reboot the system if you installed XFCE."
     TXT_YES="Yes"
     TXT_NO="No"
@@ -81,46 +75,81 @@ fi
 if [ "$INSTALL_DESKTOP" = "yes" ]; then
     apt-get update
 
+    if ! apt-cache show condtux-xfce-desktop >/dev/null 2>&1; then
+        whiptail --title "$TXT_TITLE" --msgbox "No se encontro condtux-xfce-desktop en el repo Condtux. Publica el XFCE compilado desde xfce.org y vuelve a intentar." 12 70 || true
+        exit 1
+    fi
+
     apt-get install -y \
+        condtux-xfce-desktop \
         xorg \
-        xfce4 \
-        xfce4-terminal \
         lightdm \
         lightdm-gtk-greeter \
         network-manager-gnome \
         policykit-1 \
         dbus-x11 \
-        thunar \
-        mousepad \
-        ristretto \
-        parole \
         pavucontrol \
+        pipewire-audio \
         fonts-dejavu \
-        adwaita-icon-theme \
-        greybird-gtk-theme
+        adwaita-icon-theme
 
-    THEME_CHOICE="$(whiptail --title "$TXT_TITLE" --menu "$TXT_THEME" 15 70 2 \
-        light "$TXT_LIGHT" \
-        dark "$TXT_DARK" \
-        3>&1 1>&2 2>&3 || echo light)"
+    if ! command -v startxfce4 >/dev/null 2>&1; then
+        whiptail --title "$TXT_TITLE" --msgbox "condtux-xfce-desktop no instalo startxfce4. Revisa el paquete del repo Condtux." 12 70 || true
+        exit 1
+    fi
 
     mkdir -p /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml
 
-    if [ "$THEME_CHOICE" = "dark" ]; then
-        GTK_THEME="Greybird-dark"
-    else
-        GTK_THEME="Greybird"
-    fi
-
-    cat > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml <<EOF
+    cat > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
-    <property name="ThemeName" type="string" value="$GTK_THEME"/>
     <property name="IconThemeName" type="string" value="Adwaita"/>
   </property>
 </channel>
+EOF
+
+    cat > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitorVirtual-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/condtux/defaultwallpaper.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/condtux/defaultwallpaper.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+EOF
+
+    mkdir -p /usr/share/xsessions /etc/lightdm/lightdm.conf.d
+
+    cat > /usr/share/xsessions/condtux-xfce.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Name=Condtux XFCE
+Comment=Condtux desktop session
+Exec=startxfce4
+TryExec=startxfce4
+Type=Application
+DesktopNames=XFCE
+EOF
+
+    cat > /etc/lightdm/lightdm.conf.d/50-condtux.conf <<'EOF'
+[Seat:*]
+user-session=condtux-xfce
+greeter-session=lightdm-gtk-greeter
 EOF
 
     systemctl set-default graphical.target || true

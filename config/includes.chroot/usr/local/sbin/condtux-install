@@ -4,12 +4,14 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
 
-TITLE="Condtux Installer 0.7"
+TITLE="Condtux Installer 0.8"
 TARGET="/mnt"
 DEBIAN_SUITE="trixie"
-DEBIAN_MIRROR="http://deb.debian.org/debian"
+DEBIAN_MIRROR="https://deb.debian.org/debian"
+DEBIAN_SECURITY_MIRROR="https://security.debian.org/debian-security"
 CONDTUX_REPO_URL="https://repo-condtux.jeval.cl/apt"
 CONDTUX_KEYRING="/usr/share/keyrings/condtux-archive-keyring.gpg"
+CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
 HOSTNAME="condtux"
 
 INSTALL_PROFILE="minimal"
@@ -109,9 +111,9 @@ select_install_profile() {
     local choice selected
 
     if has_whiptail; then
-        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.7.\n\nEsto se define antes de tocar el disco." 17 78 2 \
+        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.8.\n\nEsto se define antes de tocar el disco." 17 78 2 \
             minimal "Minimal sin escritorio, ideal para terminal o servidor" \
-            xfce "Escritorio XFCE con LightDM y herramientas graficas" \
+            xfce "Escritorio XFCE de Condtux con LightDM" \
             3>&1 1>&2 2>&3)"; then
             echo "Instalacion cancelada."
             exit 0
@@ -266,7 +268,7 @@ require_commands() {
     local missing=()
     local cmd
 
-    for cmd in debootstrap parted mkfs.vfat mkfs.ext4 wipefs sgdisk partprobe lsblk blkid chroot mount umount findmnt curl openssl; do
+    for cmd in debootstrap parted mkfs.vfat mkfs.ext4 wipefs sgdisk partprobe lsblk blkid chroot mount umount findmnt curl openssl rsync; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing+=("$cmd")
         fi
@@ -277,9 +279,67 @@ require_commands() {
     fi
 }
 
-check_network() {
-    if ! curl -fsI --connect-timeout 10 "$DEBIAN_MIRROR/" >/dev/null 2>&1; then
-        die "No se pudo contactar $DEBIAN_MIRROR. Conecta internet antes de instalar."
+debian_repo_available() {
+    curl -fsI --connect-timeout 8 --max-time 15 "$DEBIAN_MIRROR/dists/$DEBIAN_SUITE/InRelease" >/dev/null 2>&1
+}
+
+condtux_repo_available() {
+    curl -fsI --connect-timeout 8 --max-time 15 "$CONDTUX_REPO_URL/dists/$DEBIAN_SUITE/Release" >/dev/null 2>&1
+}
+
+network_available() {
+    debian_repo_available || return 1
+
+    if [ "$INSTALL_PROFILE" = "xfce" ]; then
+        condtux_repo_available || return 1
+    fi
+
+    return 0
+}
+
+start_network_services() {
+    local ethernet_device=""
+
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl start NetworkManager >/dev/null 2>&1 || true
+    fi
+
+    if command -v nmcli >/dev/null 2>&1; then
+        nmcli networking on >/dev/null 2>&1 || true
+        nmcli radio wifi on >/dev/null 2>&1 || true
+        ethernet_device="$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '$2 == "ethernet" {print $1; exit}' || true)"
+        if [ -n "$ethernet_device" ]; then
+            nmcli device connect "$ethernet_device" >/dev/null 2>&1 || true
+        fi
+    fi
+}
+
+configure_network_if_needed() {
+    if network_available; then
+        echo "[ Condtux ] Internet disponible; se omite configuracion de red."
+        return 0
+    fi
+
+    start_network_services
+    sleep 3
+
+    if network_available; then
+        echo "[ Condtux ] Internet disponible despues de activar NetworkManager."
+        return 0
+    fi
+
+    if yesno "No se detecto internet suficiente para este perfil.\n\nCondtux necesita descargar Debian trixie por HTTPS. El perfil XFCE tambien necesita el repo Condtux por HTTPS.\n\nQuieres abrir el asistente de red de NetworkManager?"; then
+        if command -v nmtui-connect >/dev/null 2>&1; then
+            nmtui-connect || true
+        elif command -v nmtui >/dev/null 2>&1; then
+            nmtui || true
+        else
+            msg "No esta disponible nmtui.\n\nConecta red por cable o configura Wi-Fi manualmente y vuelve a ejecutar sudo condtux-install."
+        fi
+    fi
+
+    if ! network_available; then
+        die "No se pudo contactar los repos HTTPS necesarios para el perfil elegido. Conecta internet antes de instalar."
     fi
 }
 
@@ -421,9 +481,9 @@ write_target_files() {
     efi_uuid="$(blkid -s UUID -o value "$EFI_PART")"
 
     cat > "$TARGET/etc/apt/sources.list" <<SRC
-deb http://deb.debian.org/debian trixie main
-deb http://deb.debian.org/debian trixie-updates main
-deb http://security.debian.org/debian-security trixie-security main
+deb $DEBIAN_MIRROR trixie main
+deb $DEBIAN_MIRROR trixie-updates main
+deb $DEBIAN_SECURITY_MIRROR trixie-security main
 SRC
 
     cat > "$TARGET/etc/fstab" <<FSTAB
@@ -457,6 +517,13 @@ Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
 SRC
 }
 
+copy_condtux_assets_target() {
+    if [ -d /usr/share/backgrounds/condtux ]; then
+        mkdir -p "$TARGET/usr/share/backgrounds/condtux"
+        rsync -a /usr/share/backgrounds/condtux/ "$TARGET/usr/share/backgrounds/condtux/"
+    fi
+}
+
 mount_chroot_filesystems() {
     mkdir -p "$TARGET/dev" "$TARGET/proc" "$TARGET/sys" "$TARGET/run" "$TARGET/sys/firmware/efi/efivars"
     mount --rbind /dev "$TARGET/dev"
@@ -488,6 +555,7 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
+CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
 
 if [ ! -f /tmp/condtux-install-answers ]; then
     echo "Falta /tmp/condtux-install-answers" >&2
@@ -555,31 +623,82 @@ install_condtux_repo_test() {
 }
 
 install_xfce_desktop() {
+  if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: falta $CONDTUX_XFCE_PACKAGE en https://repo-condtux.jeval.cl/apt" >&2
+    echo "[ Condtux ] Publica el XFCE compilado desde https://xfce.org/ en el repo Condtux antes de usar este perfil." >&2
+    exit 1
+  fi
+
   apt install -y \
-    task-xfce-desktop \
-    xfce4-terminal \
+    "$CONDTUX_XFCE_PACKAGE" \
+    xorg \
     lightdm \
     lightdm-gtk-greeter \
     network-manager-gnome \
-    mousepad \
+    policykit-1 \
+    dbus-x11 \
     pavucontrol \
     pipewire-audio \
     fonts-dejavu \
-    adwaita-icon-theme \
-    greybird-gtk-theme
+    adwaita-icon-theme
+
+  if ! command -v startxfce4 >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: $CONDTUX_XFCE_PACKAGE no instalo startxfce4." >&2
+    exit 1
+  fi
 
   mkdir -p /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml
+  mkdir -p /usr/share/xsessions /etc/lightdm/lightdm.conf.d
 
   cat > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml <<'XFCE'
 <?xml version="1.0" encoding="UTF-8"?>
 
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
-    <property name="ThemeName" type="string" value="Greybird"/>
     <property name="IconThemeName" type="string" value="Adwaita"/>
   </property>
 </channel>
 XFCE
+
+  cat > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml <<'XFCE'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitorVirtual-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/condtux/defaultwallpaper.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/condtux/defaultwallpaper.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+XFCE
+
+  cat > /usr/share/xsessions/condtux-xfce.desktop <<'XFCE'
+[Desktop Entry]
+Version=1.0
+Name=Condtux XFCE
+Comment=Condtux desktop session
+Exec=startxfce4
+TryExec=startxfce4
+Type=Application
+DesktopNames=XFCE
+XFCE
+
+  cat > /etc/lightdm/lightdm.conf.d/50-condtux.conf <<'LIGHTDM'
+[Seat:*]
+user-session=condtux-xfce
+greeter-session=lightdm-gtk-greeter
+LIGHTDM
 
   systemctl set-default graphical.target || true
   systemctl enable lightdm || true
@@ -624,10 +743,10 @@ cat > /etc/hosts <<'HOSTS'
 HOSTS
 
 cat > /etc/os-release <<OSR
-PRETTY_NAME="Condtux 0.7 ${CONDTUX_FLAVOR}"
+PRETTY_NAME="Condtux 0.8 ${CONDTUX_FLAVOR}"
 NAME="Condtux"
-VERSION_ID="0.7"
-VERSION="0.7 ${CONDTUX_FLAVOR}"
+VERSION_ID="0.8"
+VERSION="0.8 ${CONDTUX_FLAVOR}"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian
@@ -636,7 +755,7 @@ SUPPORT_URL="https://repo-condtux.jeval.cl/"
 BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
 OSR
 
-echo "Condtux 0.7 ${CONDTUX_FLAVOR}" > /etc/condtux-release
+echo "Condtux 0.8 ${CONDTUX_FLAVOR}" > /etc/condtux-release
 
 sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
 sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
@@ -736,11 +855,12 @@ install_base() {
     mount "$EFI_PART" "$TARGET/boot/efi"
 
     echo "[ Condtux ] Descargando sistema base Debian trixie..."
-    debootstrap --arch=amd64 "$DEBIAN_SUITE" "$TARGET" "$DEBIAN_MIRROR"
+    debootstrap --arch=amd64 --include=ca-certificates "$DEBIAN_SUITE" "$TARGET" "$DEBIAN_MIRROR"
 
     echo "[ Condtux ] Configurando repositorios y fstab..."
     write_target_files
     configure_condtux_repo_target
+    copy_condtux_assets_target
 
     echo "[ Condtux ] Preparando chroot..."
     mount_chroot_filesystems
@@ -774,11 +894,11 @@ main() {
     check_uefi
     require_commands
 
-    msg "Bienvenido al instalador de Condtux 0.7.\n\nInstalara Condtux descargando Debian trixie desde internet.\n\nSoporta solo UEFI, amd64 y disco completo."
+    msg "Bienvenido al instalador de Condtux 0.8.\n\nInstalara Condtux descargando Debian trixie desde repos HTTPS.\n\nSoporta solo UEFI, amd64 y disco completo."
 
     select_install_profile
     collect_account_settings
-    check_network
+    configure_network_if_needed
     disk="$(menu_disk)"
     confirm_disk_choice "$disk"
     install_base "$disk"

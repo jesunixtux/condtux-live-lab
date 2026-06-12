@@ -3,8 +3,8 @@ set -e
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
-PROJECT_NAME="Condtux Live 0.7"
-ISO_NAME="condtux-0.7-amd64.iso"
+PROJECT_NAME="Condtux Live 0.8"
+ISO_NAME="condtux-0.8-amd64.iso"
 ISO_OUTPUT="output/${ISO_NAME}"
 
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
@@ -17,6 +17,8 @@ mkdir -p output logs
 
 echo "[ ${PROJECT_NAME} ] Reconfigurando live-build..."
 
+scripts/sync-wallpapers.sh
+
 lb config \
   --distribution trixie \
   --architectures amd64 \
@@ -24,15 +26,15 @@ lb config \
   --binary-images iso-hybrid \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \
-  --iso-volume "CONDTUX07" \
-  --iso-application "Condtux 0.7 Live" \
+  --iso-volume "CONDTUX08" \
+  --iso-application "Condtux 0.8 Live" \
   --iso-preparer "Condtux Project" \
-  --mirror-bootstrap http://cdn-fastly.deb.debian.org/debian \
-  --mirror-chroot http://cdn-fastly.deb.debian.org/debian \
-  --mirror-binary http://cdn-fastly.deb.debian.org/debian \
+  --mirror-bootstrap https://deb.debian.org/debian \
+  --mirror-chroot https://deb.debian.org/debian \
+  --mirror-binary https://deb.debian.org/debian \
   --security true \
-  --mirror-chroot-security http://security.debian.org/debian-security \
-  --mirror-binary-security http://security.debian.org/debian-security \
+  --mirror-chroot-security https://security.debian.org/debian-security \
+  --mirror-binary-security https://security.debian.org/debian-security \
   --apt-recommends false \
   --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
 

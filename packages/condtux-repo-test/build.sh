@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="0.7.0"
+VERSION="0.8.0"
 ARCH="amd64"
 PKG="condtux-repo-test"
 ROOT="$(cd "$(dirname "$0")" && pwd)"

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Name=Condtux XFCE
+Comment=Condtux desktop session
+Exec=startxfce4
+TryExec=startxfce4
+Type=Application
+DesktopNames=XFCE

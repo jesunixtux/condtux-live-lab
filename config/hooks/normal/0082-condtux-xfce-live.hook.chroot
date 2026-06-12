@@ -1,0 +1,37 @@
+#!/bin/sh
+set -e
+
+CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
+
+echo "[ Condtux ] Activando XFCE Live desde repo Condtux..."
+
+apt-get update
+
+if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: falta $CONDTUX_XFCE_PACKAGE en https://repo-condtux.jeval.cl/apt" >&2
+    echo "[ Condtux ] Publica el XFCE compilado desde https://xfce.org/ antes de construir la ISO 0.8." >&2
+    exit 1
+fi
+
+apt-get install -y --no-install-recommends \
+    "$CONDTUX_XFCE_PACKAGE" \
+    xorg \
+    lightdm \
+    lightdm-gtk-greeter \
+    network-manager-gnome \
+    policykit-1 \
+    dbus-x11 \
+    pavucontrol \
+    pipewire-audio \
+    fonts-dejavu \
+    adwaita-icon-theme
+
+if ! command -v startxfce4 >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: $CONDTUX_XFCE_PACKAGE no instalo startxfce4." >&2
+    exit 1
+fi
+
+systemctl set-default graphical.target || true
+systemctl enable lightdm || true
+
+echo "[ Condtux ] XFCE Live listo."

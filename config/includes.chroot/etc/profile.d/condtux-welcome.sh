@@ -18,7 +18,7 @@ if [ -n "$PS1" ]; then
     echo "              CONDTUX"
     echo "           Based on Debian"
     echo
-    echo " Condtux 0.7 Live"
+    echo " Condtux 0.8 Live"
     echo " Usuario live: condtux"
     echo " Password live: live"
     echo
@@ -27,6 +27,7 @@ if [ -n "$PS1" ]; then
     echo "   cat /etc/condtux-release"
     echo "   sudo condtux-install"
     echo "   condtux-repo-test"
+    echo "   startxfce4"
     echo "   sudo apt update"
     echo
 fi

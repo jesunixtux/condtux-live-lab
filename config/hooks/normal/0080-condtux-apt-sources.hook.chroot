@@ -4,9 +4,9 @@ set -e
 echo "[ Condtux ] Configurando repositorios APT..."
 
 cat > /etc/apt/sources.list <<'EOF'
-deb http://deb.debian.org/debian trixie main
-deb http://deb.debian.org/debian trixie-updates main
-deb http://security.debian.org/debian-security trixie-security main
+deb https://deb.debian.org/debian trixie main
+deb https://deb.debian.org/debian trixie-updates main
+deb https://security.debian.org/debian-security trixie-security main
 EOF
 
 rm -f /etc/apt/sources.list.d/condtux.sources

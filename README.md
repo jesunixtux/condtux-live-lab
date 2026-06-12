@@ -1,36 +1,40 @@
 # Condtux Live Lab
 
-Mesa de trabajo para construir imagenes Live de Condtux con Debian live-build.
+Laboratorio reproducible para construir una ISO Live instalable de Condtux sobre
+Debian 13 trixie amd64 con `live-build`.
 
-Este repositorio conserva la receta reproducible de la imagen: configuracion de live-build, listas de paquetes, hooks, assets de marca y scripts de apoyo. Los arboles generados por la build, caches, logs, discos virtuales e ISOs quedan fuera de Git.
-
-## Alcance
-
-Este laboratorio apunta a una ISO Live basada en Debian para sistemas amd64/UEFI. El Live incluye un instalador local de Condtux que se ejecuta desde la sesion Live:
+La ISO arranca en modo Live y el instalador propio se ejecuta con:
 
 ```bash
 sudo condtux-install
 ```
 
-El instalador no depende de Debian Installer. Esta pensado para instalaciones UEFI en disco completo y debe tratarse como destructivo hasta completar sus confirmaciones.
+Condtux no depende de Debian Installer en este flujo. El instalador actual esta
+pensado para UEFI, amd64 y disco completo.
 
-En Condtux 0.7 el instalador pregunta el perfil antes de tocar el disco:
+## Condtux 0.8
 
-- `Minimal sin escritorio`: sistema base para terminal, servidor o VM liviana.
-- `Escritorio XFCE`: instala XFCE, LightDM, NetworkManager grafico y herramientas basicas de escritorio.
+La linea 0.8 prepara tres cambios principales:
 
-Tambien permite crear un usuario propio y elegir si ese usuario administrara con
-`sudo` o si el sistema tendra una cuenta `root` separada. La confirmacion del
-disco muestra el dispositivo, su contenido actual y pide confirmacion Si/No antes
-de borrar.
+- repositorios solo por HTTPS, tanto Debian como Condtux
+- asistente de red en el instalador si no hay internet disponible
+- escritorio XFCE de Condtux en Live e instalacion usando `condtux-xfce-desktop`
 
-El Live tambien incluye el repositorio APT firmado de Condtux en:
+El paquete `condtux-xfce-desktop` debe estar publicado en:
 
 ```text
 https://repo-condtux.jeval.cl/apt
 ```
 
-La build 0.7 prueba ese repo instalando el paquete propio `condtux-repo-test`.
+Ese paquete debe compilarse desde las fuentes oficiales de Xfce, no desde los
+metapaquetes `xfce4` o `task-xfce-desktop` de Debian. El helper inicial esta en:
+
+```bash
+packages/condtux-xfce-desktop/build-from-source.sh
+```
+
+Mientras `condtux-xfce-desktop` no exista en el repo Condtux, la build 0.8
+fallara de forma intencional para evitar una Live grafica a medias.
 
 ## Estructura
 
@@ -42,27 +46,40 @@ condtux-live-lab/
 |   |-- includes.chroot/
 |   |-- includes.installer/
 |   `-- package-lists/
-|-- disabled-hooks/
-|-- image/
+|-- image/wallpapers/
+|-- packages/
 |-- scripts/
-|   `-- build-live-iso.sh
+|   |-- build-live-iso.sh
+|   `-- sync-wallpapers.sh
 |-- .gitignore
 `-- README.md
 ```
 
 Rutas importantes:
 
-- `config/package-lists/`: paquetes que se instalan en el sistema Live.
-- `config/includes.chroot/`: archivos que se copian al filesystem del Live.
-- `config/hooks/`: hooks de live-build para etapas chroot y binary.
+- `config/package-lists/`: paquetes base del Live.
+- `config/includes.chroot/`: archivos incluidos dentro del filesystem Live.
+- `config/hooks/`: hooks de `live-build`.
+- `image/wallpapers/`: wallpapers fuente del proyecto.
 - `scripts/build-live-iso.sh`: punto de entrada principal de build.
 - `output/`: ISOs generadas, ignoradas por Git.
 
+El wallpaper por defecto es:
+
+```text
+image/wallpapers/defaultwallpaper.png
+```
+
+Antes de construir, el script de build sincroniza `image/wallpapers/` hacia:
+
+```text
+config/includes.chroot/usr/share/backgrounds/condtux/
+```
+
 ## Requisitos del builder
 
-Usa un builder Debian amd64 con espacio suficiente para los artefactos de live-build.
-
-Paquetes recomendados:
+Usa un builder Debian amd64 con espacio suficiente para los artefactos de
+`live-build`.
 
 ```bash
 sudo apt update
@@ -79,7 +96,7 @@ sudo apt install -y \
   ca-certificates
 ```
 
-## Build
+## Build de la ISO
 
 Desde la raiz del repositorio:
 
@@ -87,28 +104,28 @@ Desde la raiz del repositorio:
 scripts/build-live-iso.sh
 ```
 
-La ISO generada queda en:
+La ISO queda en:
 
 ```text
-output/
+output/condtux-0.8-amd64.iso
 ```
-
-El script limpia el estado generado por live-build, configura la build, construye la ISO y escribe un checksum SHA256 junto a la imagen.
 
 ## Validaciones rapidas
 
-Despues de construir, estas comprobaciones suelen ser utiles:
-
 ```bash
 bash -n config/includes.chroot/usr/local/sbin/condtux-install
-test -s output/*.iso
+bash -n config/includes.chroot/usr/local/sbin/condtux-first-config
+bash -n packages/condtux-xfce-desktop/build-from-source.sh
+test -s output/condtux-0.8-amd64.iso
 test -s binary/EFI/BOOT/BOOTX64.EFI
 grep -q '^debootstrap[[:space:]]' binary/live/filesystem.packages
 grep -q '^grub-efi-amd64[[:space:]]' binary/live/filesystem.packages
 grep -q '^gdisk[[:space:]]' binary/live/filesystem.packages
+grep -q '^condtux-xfce-desktop[[:space:]]' binary/live/filesystem.packages
 ```
 
-Si Debian Installer no esta incluido, GRUB no debe exponer entradas que apunten a rutas faltantes:
+Si Debian Installer no esta incluido, GRUB no debe exponer entradas hacia rutas
+faltantes:
 
 ```bash
 ! grep -RIn '/install/vmlinuz\|/install/initrd.gz' binary/boot/grub binary/isolinux
@@ -116,15 +133,15 @@ Si Debian Installer no esta incluido, GRUB no debe exponer entradas que apunten 
 
 ## Higiene de Git
 
-Guarda en Git los archivos fuente y las recetas. No guardes:
+Guarda en Git las recetas, hooks, scripts, assets y documentacion. No guardes:
 
-- directorios de build como `.build/`, `binary/`, `cache/` y `chroot/`
-- ISOs generadas
-- discos de maquinas virtuales
-- logs y descargas temporales
+- directorios generados por build como `.build/`, `binary/`, `cache/` y `chroot/`
+- ISOs y discos virtuales
+- logs, descargas temporales y respaldos locales
 - estado local de editores o herramientas
 
-Si un archivo generado ya estaba trackeado, sacalo del indice antes de confiar en `.gitignore`:
+Si un archivo generado ya estaba trackeado, sacalo del indice antes de confiar en
+`.gitignore`:
 
 ```bash
 git rm --cached path/to/generated-file
@@ -132,4 +149,5 @@ git rm --cached path/to/generated-file
 
 ## Notas
 
-Este repositorio es un laboratorio, no un archivo de releases. Los artefactos publicables deben distribuirse aparte, con checksums y un changelog breve.
+Este repositorio es el laboratorio de construccion. Los artefactos publicables
+deben distribuirse aparte con checksum y changelog.

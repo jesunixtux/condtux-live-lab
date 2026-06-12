@@ -1,7 +1,7 @@
-PRETTY_NAME="Condtux 0.7 Live"
+PRETTY_NAME="Condtux 0.8 Live"
 NAME="Condtux"
-VERSION_ID="0.7"
-VERSION="0.7 Live"
+VERSION_ID="0.8"
+VERSION="0.8 Live"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian

@@ -27,7 +27,7 @@ if [ -n "$PS1" ]; then
     echo "   cat /etc/condtux-release"
     echo "   sudo condtux-install"
     echo "   condtux-repo-test"
-    echo "   startxfce4"
+    echo "   sudo condtux-live-xfce"
     echo "   sudo apt update"
     echo
 fi

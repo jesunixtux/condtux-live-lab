@@ -32,7 +32,7 @@ if ! command -v startxfce4 >/dev/null 2>&1; then
     exit 1
 fi
 
-systemctl set-default graphical.target || true
-systemctl enable lightdm || true
+systemctl set-default multi-user.target || true
+systemctl disable lightdm || true
 
-echo "[ Condtux ] XFCE Live listo."
+echo "[ Condtux ] XFCE Live instalado y desactivado por defecto."

@@ -18,7 +18,7 @@ if [ -n "$PS1" ]; then
     echo "              CONDTUX"
     echo "           Based on Debian"
     echo
-    echo " Condtux 0.8 Live"
+    echo " Condtux 0.9 Live"
     echo " Usuario live: condtux"
     echo " Password live: live"
     echo

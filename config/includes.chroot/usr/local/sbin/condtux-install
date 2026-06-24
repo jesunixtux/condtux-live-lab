@@ -4,7 +4,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export APT_LISTCHANGES_FRONTEND=none
 
-TITLE="Condtux Installer 0.8"
+TITLE="Condtux Installer 0.9"
 TARGET="/mnt"
 DEBIAN_SUITE="trixie"
 DEBIAN_MIRROR="https://deb.debian.org/debian"
@@ -15,9 +15,12 @@ CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
 HOSTNAME="condtux"
 
 INSTALL_PROFILE="minimal"
+INSTALL_MODE="easy"
 INSTALL_USERNAME="usuario"
 INSTALL_FULLNAME="Usuario Condtux"
 ACCOUNT_MODE="sudo"
+OPTIONAL_FEATURES=""
+EXPERT_FORMAT_ROOT="yes"
 USER_PASSWORD_HASH=""
 ROOT_PASSWORD_HASH=""
 
@@ -26,6 +29,35 @@ ROOT_PART=""
 
 has_whiptail() {
     command -v whiptail >/dev/null 2>&1 && [ -t 1 ]
+}
+
+read_password_masked() {
+    local prompt="$1"
+    local pass=""
+    local char=""
+
+    printf '%s\n> ' "$prompt" >&2
+    stty -echo 2>/dev/null || true
+    while IFS= read -r -s -n 1 char; do
+        case "$char" in
+            $'\n'|$'\r')
+                break
+                ;;
+            $'\177'|$'\b')
+                if [ -n "$pass" ]; then
+                    pass="${pass%?}"
+                    printf '\b \b' >&2
+                fi
+                ;;
+            *)
+                pass="${pass}${char}"
+                printf '*' >&2
+                ;;
+        esac
+    done
+    stty echo 2>/dev/null || true
+    printf '\n' >&2
+    printf '%s\n' "$pass"
 }
 
 msg() {
@@ -76,12 +108,7 @@ passwordbox() {
     if has_whiptail; then
         whiptail --title "$TITLE" --passwordbox "$text" 11 76 3>&1 1>&2 2>&3
     else
-        printf '%s\n> ' "$text" >&2
-        stty -echo 2>/dev/null || true
-        read -r answer
-        stty echo 2>/dev/null || true
-        printf '\n' >&2
-        printf '%s\n' "$answer"
+        read_password_masked "$text"
     fi
 }
 
@@ -100,6 +127,13 @@ profile_label() {
     esac
 }
 
+install_mode_label() {
+    case "$INSTALL_MODE" in
+        expert) printf 'Experto con particiones manuales' ;;
+        *) printf 'Facil con disco completo' ;;
+    esac
+}
+
 account_mode_label() {
     case "$ACCOUNT_MODE" in
         root) printf 'Usuario normal + root separado' ;;
@@ -107,11 +141,39 @@ account_mode_label() {
     esac
 }
 
+select_install_mode() {
+    local choice selected
+
+    if has_whiptail; then
+        if ! choice="$(whiptail --title "$TITLE" --menu "Elige el modo de instalacion.\n\nFacil usa disco completo. Experto permite elegir particiones EFI/root existentes." 18 78 2 \
+            easy "Facil: borrar disco completo y particionar automaticamente" \
+            expert "Experto: elegir particion EFI y root manualmente" \
+            3>&1 1>&2 2>&3)"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+        INSTALL_MODE="$choice"
+        return 0
+    fi
+
+    echo "Modo de instalacion:" >&2
+    echo "  1) Facil: disco completo automatico" >&2
+    echo "  2) Experto: particiones manuales" >&2
+    printf 'Seleccion [1]: ' >&2
+    read -r selected
+
+    case "${selected:-1}" in
+        1|easy|facil|Facil) INSTALL_MODE="easy" ;;
+        2|expert|experto|Experto) INSTALL_MODE="expert" ;;
+        *) die "Modo de instalacion invalido." ;;
+    esac
+}
+
 select_install_profile() {
     local choice selected
 
     if has_whiptail; then
-        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.8.\n\nEsto se define antes de tocar el disco." 17 78 2 \
+        if ! choice="$(whiptail --title "$TITLE" --menu "Elige como quieres instalar Condtux 0.9.\n\nEsto se define antes de tocar el disco." 17 78 2 \
             minimal "Minimal sin escritorio, ideal para terminal o servidor" \
             xfce "Escritorio XFCE de Condtux con LightDM" \
             3>&1 1>&2 2>&3)"; then
@@ -133,6 +195,32 @@ select_install_profile() {
         2|xfce|XFCE|Xfce) INSTALL_PROFILE="xfce" ;;
         *) die "Perfil de instalacion invalido." ;;
     esac
+}
+
+select_optional_features() {
+    local choice selected
+
+    OPTIONAL_FEATURES=""
+
+    if has_whiptail; then
+        choice="$(whiptail --title "$TITLE" --checklist "Soporte opcional para tecnologias nuevas.\n\nPuedes dejar todo desmarcado para una instalacion limpia." 20 78 8 \
+            firmware "Firmware libre y base wireless" off \
+            bluetooth "Bluetooth con BlueZ" off \
+            printing "Impresion con CUPS" off \
+            vmguest "Agentes para VM: QEMU/SPICE/Open VM Tools" off \
+            3>&1 1>&2 2>&3 || true)"
+        OPTIONAL_FEATURES="$(printf '%s\n' "$choice" | tr -d '"' | xargs 2>/dev/null || true)"
+        return 0
+    fi
+
+    echo "Soporte opcional:" >&2
+    echo "  firmware   Firmware libre y base wireless" >&2
+    echo "  bluetooth  Bluetooth con BlueZ" >&2
+    echo "  printing   Impresion con CUPS" >&2
+    echo "  vmguest    Agentes para VM: QEMU/SPICE/Open VM Tools" >&2
+    printf 'Opciones separadas por espacio [ninguna]: ' >&2
+    read -r selected
+    OPTIONAL_FEATURES="$selected"
 }
 
 validate_username() {
@@ -427,7 +515,80 @@ confirm_disk_choice() {
     summary="$(disk_line "$disk")"
     layout="$(disk_children "$disk")"
 
-    if ! yesno "Confirma el disco de instalacion.\n\nDisco seleccionado:\n$summary\n\nContenido actual:\n$layout\n\nPerfil: $profile\nUsuario: $INSTALL_USERNAME\nPermisos: $mode\n\nCondtux creara:\n- EFI FAT32 512 MiB\n- root ext4 con el resto del disco\n\nEsto borrara todo el disco seleccionado.\n\nEstas seguro de que este es el disco correcto?"; then
+    if ! yesno "Confirma el disco de instalacion.\n\nDisco seleccionado:\n$summary\n\nContenido actual:\n$layout\n\nModo: $(install_mode_label)\nPerfil: $profile\nUsuario: $INSTALL_USERNAME\nPermisos: $mode\n\nCondtux creara:\n- EFI FAT32 512 MiB\n- root ext4 con el resto del disco\n\nEsto borrara todo el disco seleccionado.\n\nEstas seguro de que este es el disco correcto?"; then
+        echo "Instalacion cancelada."
+        exit 0
+    fi
+}
+
+partition_line() {
+    local part="$1"
+
+    lsblk -n -p -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT "$part" 2>/dev/null | sed 's/[[:space:]][[:space:]]*/ /g'
+}
+
+menu_partition() {
+    local title="$1"
+    local hint="$2"
+    local menu=()
+    local name size type fstype label mountpoint desc choice idx selected
+
+    while read -r name size type fstype label mountpoint; do
+        [ "$type" = "part" ] || continue
+        [ -b "$name" ] || continue
+        desc="$size"
+        [ -n "${fstype:-}" ] && desc="$desc $fstype"
+        [ -n "${label:-}" ] && desc="$desc $label"
+        [ -n "${mountpoint:-}" ] && desc="$desc mounted:$mountpoint"
+        menu+=("$name" "$desc")
+    done < <(lsblk -n -p -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINT)
+
+    if [ "${#menu[@]}" -eq 0 ]; then
+        die "No se detectaron particiones para modo experto."
+    fi
+
+    if has_whiptail; then
+        if ! choice="$(whiptail --title "$TITLE" --menu "$title\n\n$hint" 22 78 12 "${menu[@]}" 3>&1 1>&2 2>&3)"; then
+            echo "Instalacion cancelada."
+            exit 0
+        fi
+        printf '%s\n' "$choice"
+        return 0
+    fi
+
+    echo "$title" >&2
+    echo "$hint" >&2
+    idx=1
+    for ((i = 0; i < ${#menu[@]}; i += 2)); do
+        printf '  %d) %s - %s\n' "$idx" "${menu[$i]}" "${menu[$((i + 1))]}" >&2
+        idx=$((idx + 1))
+    done
+    printf 'Seleccion: ' >&2
+    read -r selected
+
+    if ! [[ "$selected" =~ ^[0-9]+$ ]]; then
+        die "Seleccion invalida."
+    fi
+    if [ "$selected" -lt 1 ] || [ "$selected" -gt $(( ${#menu[@]} / 2 )) ]; then
+        die "Seleccion fuera de rango."
+    fi
+
+    printf '%s\n' "${menu[$(( (selected - 1) * 2 ))]}"
+}
+
+select_expert_partitions() {
+    EFI_PART="$(menu_partition "Selecciona la particion EFI existente" "Debe ser FAT32/vfat y sera montada en /boot/efi. No se formateara.")"
+    ROOT_PART="$(menu_partition "Selecciona la particion root" "Sera montada en /. Puedes formatearla ext4 o reutilizarla bajo tu responsabilidad.")"
+
+    if [ "$EFI_PART" = "$ROOT_PART" ]; then
+        die "La particion EFI y root no pueden ser la misma."
+    fi
+
+    if ! yesno "Modo experto.\n\nEFI: $(partition_line "$EFI_PART")\nROOT: $(partition_line "$ROOT_PART")\n\nQuieres formatear la particion root como ext4?\n\nRecomendado para instalacion limpia."; then
+        EXPERT_FORMAT_ROOT="no"
+    fi
+
+    if ! yesno "Confirma instalacion experta.\n\nEFI: $EFI_PART\nROOT: $ROOT_PART\nFormatear root: $EXPERT_FORMAT_ROOT\n\nCondtux montara estas particiones en $TARGET y escribira el sistema alli.\n\nEstas seguro?"; then
         echo "Instalacion cancelada."
         exit 0
     fi
@@ -542,6 +703,7 @@ write_install_answers() {
         printf 'INSTALL_USERNAME=%q\n' "$INSTALL_USERNAME"
         printf 'INSTALL_FULLNAME=%q\n' "$INSTALL_FULLNAME"
         printf 'ACCOUNT_MODE=%q\n' "$ACCOUNT_MODE"
+        printf 'OPTIONAL_FEATURES=%q\n' "$OPTIONAL_FEATURES"
         printf 'USER_PASSWORD_HASH=%q\n' "$USER_PASSWORD_HASH"
         printf 'ROOT_PASSWORD_HASH=%q\n' "$ROOT_PASSWORD_HASH"
     } > "$TARGET/tmp/condtux-install-answers"
@@ -620,6 +782,55 @@ install_condtux_repo_test() {
   else
     echo "[ Condtux ] Aviso: condtux-repo-test no esta disponible en el repo Condtux."
   fi
+}
+
+install_if_available() {
+  local pkg="$1"
+
+  if apt-cache show "$pkg" >/dev/null 2>&1; then
+    apt install -y "$pkg"
+  else
+    echo "[ Condtux ] Aviso: paquete opcional no disponible: $pkg"
+  fi
+}
+
+install_optional_features() {
+  local feature pkg
+
+  for feature in $OPTIONAL_FEATURES; do
+    case "$feature" in
+      firmware)
+        for pkg in firmware-linux-free wireless-regdb; do
+          install_if_available "$pkg"
+        done
+        ;;
+      bluetooth)
+        for pkg in bluetooth bluez; do
+          install_if_available "$pkg"
+        done
+        systemctl enable bluetooth >/dev/null 2>&1 || true
+        ;;
+      printing)
+        for pkg in cups system-config-printer; do
+          install_if_available "$pkg"
+        done
+        systemctl enable cups >/dev/null 2>&1 || true
+        ;;
+      vmguest)
+        for pkg in qemu-guest-agent spice-vdagent open-vm-tools; do
+          install_if_available "$pkg"
+        done
+        systemctl enable qemu-guest-agent >/dev/null 2>&1 || true
+        systemctl enable spice-vdagentd >/dev/null 2>&1 || true
+        systemctl enable open-vm-tools >/dev/null 2>&1 || true
+        ;;
+      "")
+        ;;
+      *)
+        echo "[ Condtux ] Aviso: opcion desconocida ignorada: $feature"
+        ;;
+    esac
+  done
 }
 
 install_xfce_desktop() {
@@ -729,6 +940,7 @@ configure_accounts() {
 }
 
 install_condtux_repo_test
+install_optional_features
 
 if [ "$INSTALL_PROFILE" = "xfce" ]; then
   install_xfce_desktop
@@ -744,10 +956,10 @@ cat > /etc/hosts <<'HOSTS'
 HOSTS
 
 cat > /etc/os-release <<OSR
-PRETTY_NAME="Condtux 0.8 ${CONDTUX_FLAVOR}"
+PRETTY_NAME="Condtux 0.9 ${CONDTUX_FLAVOR}"
 NAME="Condtux"
-VERSION_ID="0.8"
-VERSION="0.8 ${CONDTUX_FLAVOR}"
+VERSION_ID="0.9"
+VERSION="0.9 ${CONDTUX_FLAVOR}"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian
@@ -756,7 +968,7 @@ SUPPORT_URL="https://repo-condtux.jeval.cl/"
 BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
 OSR
 
-echo "Condtux 0.8 ${CONDTUX_FLAVOR}" > /etc/condtux-release
+echo "Condtux 0.9 ${CONDTUX_FLAVOR}" > /etc/condtux-release
 
 sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
 sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
@@ -816,39 +1028,55 @@ CHROOT
 install_base() {
     local disk="$1"
 
-    EFI_PART="$(part_name "$disk" 1)"
-    ROOT_PART="$(part_name "$disk" 2)"
-
     trap cleanup_mounts EXIT
 
     clear || true
-    echo "[ Condtux ] Instalando en $disk"
+    echo "[ Condtux ] Instalando Condtux 0.9"
+    echo "[ Condtux ] Modo: $(install_mode_label)"
     echo "[ Condtux ] Perfil: $(profile_label)"
     echo "[ Condtux ] Usuario: $INSTALL_USERNAME"
     echo "[ Condtux ] Permisos: $(account_mode_label)"
-    echo "[ Condtux ] EFI:  $EFI_PART"
-    echo "[ Condtux ] ROOT: $ROOT_PART"
+    [ -n "$OPTIONAL_FEATURES" ] && echo "[ Condtux ] Opcionales: $OPTIONAL_FEATURES"
 
     ensure_target_free
-    ensure_disk_not_in_use "$disk"
 
-    echo "[ Condtux ] Borrando firmas anteriores..."
-    swapoff -a >/dev/null 2>&1 || true
-    wipefs -af "$disk" || true
-    sgdisk --zap-all "$disk" >/dev/null 2>&1 || true
-    partprobe "$disk" >/dev/null 2>&1 || true
+    if [ "$INSTALL_MODE" = "expert" ]; then
+        echo "[ Condtux ] EFI:  $EFI_PART"
+        echo "[ Condtux ] ROOT: $ROOT_PART"
+        if findmnt -rn -S "$EFI_PART" >/dev/null 2>&1 || findmnt -rn -S "$ROOT_PART" >/dev/null 2>&1; then
+            die "Alguna particion experta ya esta montada. Desmontala antes de instalar."
+        fi
+        if [ "$EXPERT_FORMAT_ROOT" = "yes" ]; then
+            echo "[ Condtux ] Formateando root como ext4..."
+            mkfs.ext4 -F -L CONDTUX_ROOT "$ROOT_PART"
+        fi
+    else
+        EFI_PART="$(part_name "$disk" 1)"
+        ROOT_PART="$(part_name "$disk" 2)"
+        echo "[ Condtux ] Disco: $disk"
+        echo "[ Condtux ] EFI:  $EFI_PART"
+        echo "[ Condtux ] ROOT: $ROOT_PART"
 
-    echo "[ Condtux ] Creando tabla GPT..."
-    parted -s -a optimal "$disk" mklabel gpt
-    parted -s -a optimal "$disk" mkpart ESP fat32 1MiB 513MiB
-    parted -s "$disk" set 1 esp on
-    parted -s -a optimal "$disk" mkpart primary ext4 513MiB 100%
+        ensure_disk_not_in_use "$disk"
 
-    wait_for_partitions "$disk"
+        echo "[ Condtux ] Borrando firmas anteriores..."
+        swapoff -a >/dev/null 2>&1 || true
+        wipefs -af "$disk" || true
+        sgdisk --zap-all "$disk" >/dev/null 2>&1 || true
+        partprobe "$disk" >/dev/null 2>&1 || true
 
-    echo "[ Condtux ] Formateando particiones..."
-    mkfs.vfat -F32 -n CONDTUXEFI "$EFI_PART"
-    mkfs.ext4 -F -L CONDTUX_ROOT "$ROOT_PART"
+        echo "[ Condtux ] Creando tabla GPT..."
+        parted -s -a optimal "$disk" mklabel gpt
+        parted -s -a optimal "$disk" mkpart ESP fat32 1MiB 513MiB
+        parted -s "$disk" set 1 esp on
+        parted -s -a optimal "$disk" mkpart primary ext4 513MiB 100%
+
+        wait_for_partitions "$disk"
+
+        echo "[ Condtux ] Formateando particiones..."
+        mkfs.vfat -F32 -n CONDTUXEFI "$EFI_PART"
+        mkfs.ext4 -F -L CONDTUX_ROOT "$ROOT_PART"
+    fi
 
     echo "[ Condtux ] Montando sistema en $TARGET..."
     mount "$ROOT_PART" "$TARGET"
@@ -868,7 +1096,7 @@ install_base() {
     create_chroot_setup_script
     write_install_answers
 
-    echo "[ Condtux ] Instalando kernel, GRUB, usuario, servicios y perfil $(profile_label)..."
+    echo "[ Condtux ] Instalando kernel, GRUB, usuario, opcionales y perfil $(profile_label)..."
     chroot "$TARGET" /bin/bash /tmp/condtux-chroot-setup.sh
     rm -f "$TARGET/tmp/condtux-chroot-setup.sh" "$TARGET/tmp/condtux-install-answers"
 
@@ -888,20 +1116,26 @@ install_base() {
 }
 
 main() {
-    local disk
+    local disk=""
 
     need_root
     check_amd64
     check_uefi
     require_commands
 
-    msg "Bienvenido al instalador de Condtux 0.8.\n\nInstalara Condtux descargando Debian trixie desde repos HTTPS.\n\nSoporta solo UEFI, amd64 y disco completo."
+    msg "Bienvenido al instalador de Condtux 0.9.\n\nModo facil: disco completo automatico.\nModo experto: particiones EFI/root manuales.\n\nSoporta solo UEFI y amd64."
 
+    select_install_mode
     select_install_profile
+    select_optional_features
     collect_account_settings
     configure_network_if_needed
-    disk="$(menu_disk)"
-    confirm_disk_choice "$disk"
+    if [ "$INSTALL_MODE" = "expert" ]; then
+        select_expert_partitions
+    else
+        disk="$(menu_disk)"
+        confirm_disk_choice "$disk"
+    fi
     install_base "$disk"
 
     if yesno "Condtux fue instalado correctamente.\n\nQuieres reiniciar ahora?"; then

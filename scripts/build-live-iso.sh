@@ -3,8 +3,8 @@ set -e
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
-PROJECT_NAME="Condtux Live 0.8"
-ISO_NAME="condtux-0.8-amd64.iso"
+PROJECT_NAME="Condtux Live 0.9"
+ISO_NAME="condtux-0.9-amd64.iso"
 ISO_OUTPUT="output/${ISO_NAME}"
 
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
@@ -19,6 +19,12 @@ mkdir -p output logs
 echo "[ ${PROJECT_NAME} ] Reconfigurando live-build..."
 
 scripts/sync-wallpapers.sh
+install -D -m 0644 image/condtux_imagen_system/system_wallpaper_condtux.png \
+  config/includes.binary/boot/grub/themes/condtux/background.png
+install -D -m 0644 image/condtux_imagen_system/system_wallpaper_condtux.png \
+  config/includes.chroot/usr/share/backgrounds/condtux/system_wallpaper_condtux.png
+install -D -m 0644 image/condtux_imagen_system/system_wallpaper_condtux.png \
+  config/includes.chroot/usr/share/backgrounds/condtux/defaultwallpaper.png
 
 lb config \
   --distribution trixie \
@@ -27,8 +33,8 @@ lb config \
   --binary-images iso-hybrid \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \
-  --iso-volume "CONDTUX08" \
-  --iso-application "Condtux 0.8 Live" \
+  --iso-volume "CONDTUX09" \
+  --iso-application "Condtux 0.9 Live" \
   --iso-preparer "Condtux Project" \
   --mirror-bootstrap https://deb.debian.org/debian \
   --mirror-chroot https://deb.debian.org/debian \

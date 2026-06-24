@@ -9,7 +9,7 @@ apt-get update
 
 if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
     echo "[ Condtux ] ERROR: falta $CONDTUX_XFCE_PACKAGE en https://repo-condtux.jeval.cl/apt" >&2
-    echo "[ Condtux ] Publica el XFCE compilado desde https://xfce.org/ antes de construir la ISO 0.8." >&2
+    echo "[ Condtux ] Publica el XFCE compilado desde https://xfce.org/ antes de construir la ISO 0.9." >&2
     exit 1
 fi
 

@@ -2,7 +2,7 @@
 set -eu
 
 XFCE_VERSION="${XFCE_VERSION:-4.20}"
-PKG_VERSION="${PKG_VERSION:-0.8.0}"
+PKG_VERSION="${PKG_VERSION:-0.9.0}"
 ARCH="${ARCH:-amd64}"
 PKG="condtux-xfce-desktop"
 ROOT="$(cd "$(dirname "$0")" && pwd)"

@@ -10,15 +10,26 @@ sudo condtux-install
 ```
 
 Condtux no depende de Debian Installer en este flujo. El instalador actual esta
-pensado para UEFI, amd64 y disco completo.
+pensado para UEFI y amd64.
 
-## Condtux 0.8
+## Condtux 0.9
 
-La linea 0.8 prepara tres cambios principales:
+La linea 0.9 mantiene lo que ya funcionaba en 0.8 y suma:
 
-- repositorios solo por HTTPS, tanto Debian como Condtux
-- asistente de red en el instalador si no hay internet disponible
-- escritorio XFCE de Condtux en Live e instalacion usando `condtux-xfce-desktop`
+- branding Condtux en GRUB, fondos del Live y textos del sistema
+- imagen principal en `image/condtux_imagen_system/system_wallpaper_condtux.png`
+- instalador con modo facil y modo experto
+- modo facil: disco completo, GPT, EFI FAT32 y root ext4
+- modo experto: seleccion manual de particion EFI y particion root
+- passwords en terminal con mascara visual de asteriscos
+- soporte opcional para firmware libre, Bluetooth, impresion y agentes de VM
+- XFCE instalado en el Live, pero desactivado por defecto
+
+Para activar XFCE durante una sesion Live:
+
+```bash
+sudo condtux-live-xfce
+```
 
 El paquete `condtux-xfce-desktop` debe estar publicado en:
 
@@ -33,8 +44,24 @@ metapaquetes `xfce4` o `task-xfce-desktop` de Debian. El helper inicial esta en:
 packages/condtux-xfce-desktop/build-from-source.sh
 ```
 
-Mientras `condtux-xfce-desktop` no exista en el repo Condtux, la build 0.8
-fallara de forma intencional para evitar una Live grafica a medias.
+Mientras `condtux-xfce-desktop` no exista en el repo Condtux, la build fallara
+de forma intencional para evitar una Live grafica a medias.
+
+## Builder actual
+
+Builder de laboratorio:
+
+```text
+builder@192.168.1.96
+```
+
+Desde tu maquina:
+
+```bash
+ssh builder@192.168.1.96
+cd /home/builder/condtux-live-lab
+printf '%s\n' '2952404' | sudo -S bash scripts/build-live-iso.sh
+```
 
 ## Estructura
 
@@ -46,7 +73,9 @@ condtux-live-lab/
 |   |-- includes.chroot/
 |   |-- includes.installer/
 |   `-- package-lists/
-|-- image/wallpapers/
+|-- image/
+|   |-- condtux_imagen_system/
+|   `-- wallpapers/
 |-- packages/
 |-- scripts/
 |   |-- build-live-iso.sh
@@ -59,21 +88,26 @@ Rutas importantes:
 
 - `config/package-lists/`: paquetes base del Live.
 - `config/includes.chroot/`: archivos incluidos dentro del filesystem Live.
+- `config/includes.binary/`: archivos incluidos en el arbol ISO.
 - `config/hooks/`: hooks de `live-build`.
+- `image/condtux_imagen_system/`: imagen principal del sistema y GRUB.
 - `image/wallpapers/`: wallpapers fuente del proyecto.
 - `scripts/build-live-iso.sh`: punto de entrada principal de build.
 - `output/`: ISOs generadas, ignoradas por Git.
 
-El wallpaper por defecto es:
+El wallpaper principal de sistema y GRUB es:
 
 ```text
-image/wallpapers/defaultwallpaper.png
+image/condtux_imagen_system/system_wallpaper_condtux.png
 ```
 
-Antes de construir, el script de build sincroniza `image/wallpapers/` hacia:
+Antes de construir, el script de build sincroniza wallpapers y copia la imagen
+principal hacia:
 
 ```text
-config/includes.chroot/usr/share/backgrounds/condtux/
+config/includes.binary/boot/grub/themes/condtux/background.png
+config/includes.chroot/usr/share/backgrounds/condtux/defaultwallpaper.png
+config/includes.chroot/usr/share/backgrounds/condtux/system_wallpaper_condtux.png
 ```
 
 ## Requisitos del builder
@@ -107,16 +141,19 @@ scripts/build-live-iso.sh
 La ISO queda en:
 
 ```text
-output/condtux-0.8-amd64.iso
+output/condtux-0.9-amd64.iso
 ```
 
 ## Validaciones rapidas
 
 ```bash
+bash -n scripts/build-live-iso.sh
 bash -n config/includes.chroot/usr/local/sbin/condtux-install
 bash -n config/includes.chroot/usr/local/sbin/condtux-first-config
+bash -n config/includes.chroot/usr/local/sbin/condtux-live-xfce
 bash -n packages/condtux-xfce-desktop/build-from-source.sh
-test -s output/condtux-0.8-amd64.iso
+test -s image/condtux_imagen_system/system_wallpaper_condtux.png
+test -s output/condtux-0.9-amd64.iso
 test -s binary/EFI/BOOT/BOOTX64.EFI
 grep -q '^debootstrap[[:space:]]' binary/live/filesystem.packages
 grep -q '^grub-efi-amd64[[:space:]]' binary/live/filesystem.packages

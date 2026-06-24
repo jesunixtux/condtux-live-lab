@@ -1,6 +1,6 @@
 # condtux-xfce-desktop
 
-Paquete esperado por Condtux 0.8 para habilitar el perfil grafico XFCE sin
+Paquete esperado por Condtux 0.9 para habilitar el perfil grafico XFCE sin
 depender de `xfce4` ni `task-xfce-desktop` de Debian.
 
 La fuente base es el release estable oficial Xfce 4.20:
@@ -15,7 +15,7 @@ https://repo-condtux.jeval.cl/apt
 ```
 
 Mientras `condtux-xfce-desktop` no este publicado en el repo Condtux, la build
-0.8 fallara de forma intencional para evitar usar paquetes XFCE de Debian por
+0.9 fallara de forma intencional para evitar usar paquetes XFCE de Debian por
 accidente.
 
 ## Build del paquete
@@ -32,4 +32,4 @@ El `.deb` resultante queda en:
 packages/condtux-xfce-desktop/dist/
 ```
 
-Publica ese `.deb` en el repo APT de Condtux antes de construir la ISO 0.8.
+Publica ese `.deb` en el repo APT de Condtux antes de construir la ISO 0.9.

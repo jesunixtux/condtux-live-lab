@@ -1,7 +1,8 @@
-title-text: "Condtux 0.3 Minimal Orange"
+title-text: "Condtux GNU/Linux 0.9"
 title-font: "Unifont Regular 32"
 title-color: "#ffffff"
 desktop-color: "#05080d"
+desktop-image: "background.png"
 
 message-font: "Unifont Regular 16"
 message-color: "#ffffff"
@@ -15,7 +16,7 @@ terminal-box: "terminal_box_*.png"
     left = 6%
     width = 88%
     height = 60
-    text = "Condtux 0.3 Minimal Orange"
+    text = "Condtux GNU/Linux 0.9"
     font = "Unifont Regular 32"
     color = "#ffffff"
     align = "left"
@@ -26,7 +27,7 @@ terminal-box: "terminal_box_*.png"
     left = 6%
     width = 88%
     height = 35
-    text = "Simple. Stable. Yours. | Based on Debian"
+    text = "Simple. Stable. Yours. | Debian 13 trixie | amd64 | UEFI"
     font = "Unifont Regular 16"
     color = "#2f9bff"
     align = "left"
@@ -53,7 +54,7 @@ terminal-box: "terminal_box_*.png"
     left = 6%
     width = 88%
     height = 30
-    text = "Enter: boot | e: edit | c: command line"
+    text = "ENTER para iniciar | TAB para editar | ESC para volver"
     font = "Unifont Regular 14"
     color = "#888888"
     align = "center"

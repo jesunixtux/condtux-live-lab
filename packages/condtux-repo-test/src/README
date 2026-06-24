@@ -1,4 +1,4 @@
 condtux-repo-test
 
-Small command used by Condtux 0.8 to verify that the Condtux APT
+Small command used by Condtux 0.9 to verify that the Condtux APT
 repository can publish and install signed Debian packages.

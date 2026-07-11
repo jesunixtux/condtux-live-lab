@@ -28,7 +28,7 @@ EFI_PART=""
 ROOT_PART=""
 
 has_whiptail() {
-    command -v whiptail >/dev/null 2>&1 && [ -t 1 ]
+    command -v whiptail >/dev/null 2>&1 && [ -t 0 ] && [ -t 2 ]
 }
 
 read_password_masked() {
@@ -37,10 +37,10 @@ read_password_masked() {
     local char=""
 
     printf '%s\n> ' "$prompt" >&2
-    stty -echo 2>/dev/null || true
+
     while IFS= read -r -s -n 1 char; do
         case "$char" in
-            $'\n'|$'\r')
+            ""|$'\n'|$'\r')
                 break
                 ;;
             $'\177'|$'\b')
@@ -55,7 +55,7 @@ read_password_masked() {
                 ;;
         esac
     done
-    stty echo 2>/dev/null || true
+
     printf '\n' >&2
     printf '%s\n' "$pass"
 }

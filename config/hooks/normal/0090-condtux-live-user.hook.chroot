@@ -1,5 +1,5 @@
 #!/bin/sh
-set -e
+set -eu
 
 echo "[ Condtux ] Preparando usuario Live condtux..."
 
@@ -17,6 +17,13 @@ cat > /etc/sudoers.d/condtux-live <<'SUDO'
 condtux ALL=(ALL) NOPASSWD:ALL
 SUDO
 chmod 0440 /etc/sudoers.d/condtux-live
+
+mkdir -p /home/condtux/Desktop
+if [ -f /etc/skel/Desktop/condtux-install.desktop ]; then
+    cp -f /etc/skel/Desktop/condtux-install.desktop /home/condtux/Desktop/condtux-install.desktop
+    chmod 0755 /home/condtux/Desktop/condtux-install.desktop
+fi
+chown -R condtux:condtux /home/condtux
 
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<'GETTY'

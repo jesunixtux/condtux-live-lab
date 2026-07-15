@@ -22,7 +22,7 @@ case "$VERSION" in
 esac
 
 echo "[ ${PROJECT_NAME} ] Aplicando version central..."
-scripts/apply-version.sh
+sh scripts/apply-version.sh
 
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
 sudo lb clean --all || true

@@ -35,8 +35,10 @@ if [ -f "$INSTALLER" ]; then
         sed -i '/keyboard-configuration \\/a\  kbd \\\n  whiptail \\' "$INSTALLER"
     fi
 
-    if ! grep -q '^[[:space:]]*xfce4-terminal \\' "$INSTALLER"; then
-        sed -i '/lightdm-gtk-greeter \\/a\    xfce4-terminal \\\n    zenity \\' "$INSTALLER"
+    # xterm evita instalar xfce4-terminal y sus bibliotecas XFCE de Debian,
+    # que duplican archivos del paquete monolitico condtux-xfce-desktop.
+    if ! grep -q '^[[:space:]]*xterm \\' "$INSTALLER"; then
+        sed -i '/lightdm-gtk-greeter \\/a\    xterm \\\n    zenity \\' "$INSTALLER"
     fi
 
     if ! grep -q 'condtux-copy-live-language-target' "$INSTALLER"; then

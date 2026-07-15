@@ -13,12 +13,16 @@ if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
     exit 1
 fi
 
+# No instalar xfce4-terminal: depende de las bibliotecas XFCE empaquetadas por
+# Debian y chocaria con las mismas bibliotecas incluidas en el paquete
+# monolitico condtux-xfce-desktop. xterm proporciona una terminal grafica sin
+# introducir una segunda implementacion de XFCE.
 apt-get install -y --no-install-recommends \
     "$CONDTUX_XFCE_PACKAGE" \
     xorg \
     lightdm \
     lightdm-gtk-greeter \
-    xfce4-terminal \
+    xterm \
     zenity \
     network-manager-gnome \
     polkitd \

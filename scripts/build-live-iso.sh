@@ -36,11 +36,9 @@ mkdir -p output logs
 echo "[ ${PROJECT_NAME} ] Sincronizando wallpapers..."
 scripts/sync-wallpapers.sh
 
-# El wallpaper actual del sistema queda reservado para GRUB.
+# El wallpaper clasico queda reservado para GRUB.
 install -D -m 0644 image/condtux_imagen_system/system_wallpaper_condtux.png \
   config/includes.binary/boot/grub/themes/condtux/background.png
-
-# El escritorio usa image/wallpapers/defaultwallpaper.png, sincronizado arriba.
 
 echo "[ ${PROJECT_NAME} ] Reconfigurando live-build..."
 lb config \
@@ -50,7 +48,8 @@ lb config \
   --binary-images iso-hybrid \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \
-  --uefi-secure-boot disable \
+  --uefi-secure-boot enable \
+  --compression zstd \
   --iso-volume "CONDTUX${VERSION_COMPACT}" \
   --iso-application "Condtux ${VERSION} Live" \
   --iso-preparer "Condtux Project" \
@@ -64,19 +63,14 @@ lb config \
   --apt-recommends false \
   --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=en_US.UTF-8 keyboard-layouts=us timezone=America/Santiago"
 
-echo "[ ${PROJECT_NAME} ] Deshabilitando Debian Installer y limpiando residuos..."
-
+echo "[ ${PROJECT_NAME} ] Ajustando configuracion final..."
 if [ -f config/binary ]; then
   sed -i 's#^LB_DEBIAN_INSTALLER=.*#LB_DEBIAN_INSTALLER="none"#' config/binary
   sed -i 's#^LB_DEBIAN_INSTALLER_PRESEEDFILE=.*#LB_DEBIAN_INSTALLER_PRESEEDFILE=""#' config/binary
   sed -i 's#^LB_BOOTAPPEND_INSTALL=.*#LB_BOOTAPPEND_INSTALL=""#' config/binary
-  sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="disable"#' config/binary
-  sed -i 's#preseed/file=/preseed.cfg file=/cdrom/install/config/includes.installer/condtux.seed#preseed/file=/preseed.cfg#g' config/binary
-  sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' config/binary
+  sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="enable"#' config/binary
+  sed -i 's#^LB_COMPRESSION=.*#LB_COMPRESSION="zstd"#' config/binary
 fi
-
-echo "[ ${PROJECT_NAME} ] Configuracion final del instalador Debian:"
-grep "LB_DEBIAN_INSTALLER" config/binary || true
 
 echo "[ ${PROJECT_NAME} ] Construyendo ISO..."
 sudo lb build

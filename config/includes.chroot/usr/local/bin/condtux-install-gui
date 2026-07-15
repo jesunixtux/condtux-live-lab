@@ -4,26 +4,24 @@ set -eu
 case "${LANG:-en}" in
     es*)
         TITLE="Instalar Condtux"
-        QUESTION="Se abrirá el instalador de Condtux en una ventana segura. ¿Quieres continuar?"
+        INSTALLER="/usr/local/sbin/condtux-install"
         CLOSE_TEXT="Presiona Enter para cerrar..."
         ;;
     *)
         TITLE="Install Condtux"
-        QUESTION="The Condtux installer will open in a secure window. Do you want to continue?"
+        INSTALLER="/usr/local/sbin/condtux-install-en"
         CLOSE_TEXT="Press Enter to close..."
         ;;
 esac
 
-if command -v zenity >/dev/null 2>&1; then
-    zenity --question --title="$TITLE" --text="$QUESTION" --width=440 || exit 0
-fi
+[ -x "$INSTALLER" ] || INSTALLER="/usr/local/sbin/condtux-install"
 
 if command -v xterm >/dev/null 2>&1; then
-    exec xterm -T "$TITLE" -e sh -c 'sudo /usr/local/sbin/condtux-install; printf "\n%s" "$1"; read answer' sh "$CLOSE_TEXT"
+    exec xterm -T "$TITLE" -geometry 112x36 -e sh -c 'sudo "$1"; printf "\n%s" "$2"; read answer' sh "$INSTALLER" "$CLOSE_TEXT"
 fi
 
 if command -v x-terminal-emulator >/dev/null 2>&1; then
-    exec x-terminal-emulator -e sh -c 'sudo /usr/local/sbin/condtux-install; printf "\nPress Enter / Presiona Enter..."; read answer'
+    exec x-terminal-emulator -e sh -c 'sudo "$1"; printf "\nPress Enter / Presiona Enter..."; read answer' sh "$INSTALLER"
 fi
 
 echo "No graphical terminal found / No se encontro una terminal grafica." >&2

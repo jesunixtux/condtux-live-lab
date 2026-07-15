@@ -39,7 +39,7 @@ replace_if_exists "$ROOT/config/includes.chroot/etc/os-release" \
     -e 's#github.com/jechugit/#github.com/jesunixtux/#g'
 
 printf 'Condtux %s Live - Debian trixie amd64\n' "$VERSION" > "$ROOT/config/includes.chroot/etc/condtux-release"
-printf 'Condtux GNU/Linux %s \\n \\l\n' "$VERSION" > "$ROOT/config/includes.chroot/etc/issue"
+printf '%s\n' "Condtux GNU/Linux ${VERSION} \n \l" > "$ROOT/config/includes.chroot/etc/issue"
 printf 'Condtux GNU/Linux %s\n' "$VERSION" > "$ROOT/config/includes.chroot/etc/issue.net"
 printf '%s\n' "$VERSION" > "$ROOT/config/includes.chroot/etc/condtux-version"
 
@@ -54,6 +54,9 @@ replace_if_exists "$ROOT/config/includes.chroot/usr/local/sbin/condtux-install" 
 replace_if_exists "$ROOT/config/hooks/normal/9000-condtux-grub-branding.hook.binary" \
     -e "s#Condtux GNU/Linux 0\.[0-9][0-9]*#Condtux GNU/Linux ${VERSION}#g" \
     -e "s#Condtux 0\.[0-9][0-9]*#Condtux ${VERSION}#g"
+
+replace_if_exists "$ROOT/config/hooks/normal/0090-condtux-live-user.hook.chroot" \
+    -e "s#Live 0\.[0-9][0-9]*#Live ${VERSION}#g"
 
 replace_if_exists "$ROOT/packages/condtux-xfce-desktop/build-from-source.sh" \
     -e "s#PKG_VERSION=\"\${PKG_VERSION:-0\.[0-9][0-9]*\.0}\"#PKG_VERSION=\"\${PKG_VERSION:-${VERSION}.0}\"#"

@@ -24,8 +24,6 @@ esac
 echo "[ ${PROJECT_NAME} ] Aplicando version central..."
 sh scripts/apply-version.sh
 
-# GitHub Contents crea archivos nuevos sin bit ejecutable. Normalizamos los
-# hooks antes de que live-build los enlace.
 chmod +x config/hooks/normal/*.hook.chroot config/hooks/normal/*.hook.binary 2>/dev/null || true
 
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
@@ -67,6 +65,11 @@ lb config \
   --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=en_US.UTF-8 keyboard-layouts=us timezone=America/Santiago"
 
 echo "[ ${PROJECT_NAME} ] Ajustando configuracion final..."
+if [ -f config/bootstrap ]; then
+  sed -i 's#^LB_ARCHIVE_AREAS=.*#LB_ARCHIVE_AREAS="main non-free-firmware"#' config/bootstrap
+  sed -i 's#^LB_PARENT_ARCHIVE_AREAS=.*#LB_PARENT_ARCHIVE_AREAS="main non-free-firmware"#' config/bootstrap
+fi
+
 if [ -f config/binary ]; then
   sed -i 's#^LB_DEBIAN_INSTALLER=.*#LB_DEBIAN_INSTALLER="none"#' config/binary
   sed -i 's#^LB_DEBIAN_INSTALLER_PRESEEDFILE=.*#LB_DEBIAN_INSTALLER_PRESEEDFILE=""#' config/binary
@@ -74,6 +77,9 @@ if [ -f config/binary ]; then
   sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="enable"#' config/binary
   sed -i 's#^LB_COMPRESSION=.*#LB_COMPRESSION="xz"#' config/binary
 fi
+
+echo "[ ${PROJECT_NAME} ] Areas APT activas:"
+grep -E '^LB_(PARENT_)?ARCHIVE_AREAS=' config/bootstrap || true
 
 echo "[ ${PROJECT_NAME} ] Construyendo ISO..."
 sudo lb build

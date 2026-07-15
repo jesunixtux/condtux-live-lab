@@ -19,6 +19,7 @@ fastfetch
 locales
 console-setup
 keyboard-configuration
+kbd
 network-manager
 live-config
 live-boot

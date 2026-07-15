@@ -3,42 +3,51 @@ set -eu
 
 CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
 
-echo "[ Condtux ] Instalando XFCE Live desde repo Condtux..."
-
+echo "[ Condtux ] Instalando XFCE Live optimizado..."
 apt-get update
 
 if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
     echo "[ Condtux ] ERROR: falta $CONDTUX_XFCE_PACKAGE en https://repo-condtux.jeval.cl/apt" >&2
-    echo "[ Condtux ] Publica el XFCE compilado desde https://xfce.org/ antes de construir la ISO." >&2
     exit 1
 fi
 
-# No instalar xfce4-terminal: depende de las bibliotecas XFCE empaquetadas por
-# Debian y chocaria con las mismas bibliotecas incluidas en el paquete
-# monolitico condtux-xfce-desktop. xterm proporciona una terminal grafica sin
-# introducir una segunda implementacion de XFCE.
+# Xorg explicito: evita el metapaquete xorg y sus aplicaciones, fuentes y
+# documentacion innecesarias, pero conserva controladores para hardware real.
 apt-get install -y --no-install-recommends \
     "$CONDTUX_XFCE_PACKAGE" \
-    xorg \
+    xserver-xorg-core \
+    xserver-xorg-input-libinput \
+    xserver-xorg-video-amdgpu \
+    xserver-xorg-video-ati \
+    xserver-xorg-video-intel \
+    xserver-xorg-video-nouveau \
+    xserver-xorg-video-vesa \
+    xserver-xorg-video-fbdev \
+    xserver-xorg-video-vmware \
+    xinit \
+    xauth \
+    x11-xserver-utils \
     lightdm \
     lightdm-gtk-greeter \
     xterm \
-    zenity \
     network-manager-gnome \
     polkitd \
     pkexec \
     dbus-x11 \
-    pavucontrol \
     pipewire-audio \
-    fonts-dejavu \
-    adwaita-icon-theme
+    fonts-dejavu-core \
+    hicolor-icon-theme
 
 if ! command -v startxfce4 >/dev/null 2>&1; then
     echo "[ Condtux ] ERROR: $CONDTUX_XFCE_PACKAGE no instalo startxfce4." >&2
     exit 1
 fi
 
+# El Live entra primero en consola para ejecutar idioma/teclado y luego permite
+# iniciar XFCE; no levantamos servicios graficos antes de tiempo.
 systemctl set-default multi-user.target || true
 systemctl disable lightdm || true
+systemctl disable ssh.service ssh.socket 2>/dev/null || true
+systemctl disable bluetooth.service cups.service 2>/dev/null || true
 
-echo "[ Condtux ] XFCE Live instalado y desactivado por defecto."
+echo "[ Condtux ] XFCE Live optimizado y listo."

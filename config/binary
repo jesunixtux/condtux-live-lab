@@ -115,4 +115,5 @@ LB_SWAP_FILE_PATH=""
 LB_SWAP_FILE_SIZE="512"
 
 # Secure Boot no esta soportado por Condtux por ahora.
-LB_UEFI_SECURE_BOOT="false"
+# live-build acepta auto, enable o disable; no acepta true/false aqui.
+LB_UEFI_SECURE_BOOT="disable"

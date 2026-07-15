@@ -1,0 +1,20 @@
+[Unit]
+Description=Condtux Live language and keyboard setup
+After=systemd-remount-fs.service
+Before=getty@tty1.service display-manager.service
+ConditionKernelCommandLine=boot=live
+
+[Service]
+Type=oneshot
+Environment=TERM=linux
+ExecStart=/usr/local/sbin/condtux-live-setup
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

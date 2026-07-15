@@ -9,10 +9,10 @@ LB_BINARY_FILESYSTEM="fat32"
 # Set apt/aptitude generic indices
 LB_APT_INDICES="true"
 
-# Set boot parameters
-LB_BOOTAPPEND_LIVE="boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=es_CL.UTF-8 keyboard-layouts=latam timezone=America/Santiago"
+# Set boot parameters. El asistente Live elegira idioma y teclado antes del login.
+LB_BOOTAPPEND_LIVE="boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=en_US.UTF-8 keyboard-layouts=us timezone=America/Santiago"
 
-# Set boot parameters
+# Debian Installer esta deshabilitado; Condtux usa su instalador desde el Live.
 LB_BOOTAPPEND_INSTALL=""
 
 # Set boot parameters
@@ -46,7 +46,6 @@ LB_DM_VERITY_SIGN=""
 LB_ZSYNC="false"
 
 # Control if we build binary images chrooted
-# NEVER, *EVER*, *E*V*E*R* SET THIS OPTION to false.
 LB_BUILD_WITH_CHROOT="true"
 
 # Set debian-installer
@@ -67,20 +66,20 @@ LB_HDD_LABEL="DEBIAN_LIVE"
 # Set hdd filesystem size
 LB_HDD_SIZE="auto"
 
-# Set start of partition for the hdd target for BIOSes that expect a specific boot partition start (e.g. "63s"). If empty, use optimal layout.
+# Set start of partition for the hdd target
 LB_HDD_PARTITION_START=""
 
 # Set iso author
-LB_ISO_APPLICATION="Condtux 0.9 Live"
+LB_ISO_APPLICATION="Condtux 0.10 Live"
 
 # Set iso preparer
 LB_ISO_PREPARER="Condtux Project"
 
 # Set iso publisher
-LB_ISO_PUBLISHER="Debian Live project; https://wiki.debian.org/DebianLive; debian-live@lists.debian.org"
+LB_ISO_PUBLISHER="Condtux Project; based on Debian Live"
 
 # Set iso volume (max 32 chars)
-LB_ISO_VOLUME="CONDTUX09"
+LB_ISO_VOLUME="CONDTUX010"
 
 # Set jffs2 eraseblock size
 LB_JFFS2_ERASEBLOCK=""
@@ -115,5 +114,5 @@ LB_SWAP_FILE_PATH=""
 # Set swap file size
 LB_SWAP_FILE_SIZE="512"
 
-# Enable/disable UEFI secure boot support
-LB_UEFI_SECURE_BOOT="auto"
+# Secure Boot no esta soportado por Condtux por ahora.
+LB_UEFI_SECURE_BOOT="false"

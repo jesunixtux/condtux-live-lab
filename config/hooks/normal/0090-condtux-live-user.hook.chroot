@@ -1,7 +1,50 @@
 #!/bin/sh
-set -e
+set -eu
 
-echo "[ Condtux ] Preparando usuario Live condtux..."
+echo "[ Condtux ] Preparando usuario y configuracion Live 0.10..."
+
+# Los archivos nuevos creados por GitHub se normalizan aqui como ejecutables.
+chmod 0755 \
+    /usr/local/sbin/condtux-language \
+    /usr/local/sbin/condtux-live-setup \
+    /usr/local/sbin/condtux-copy-live-language-target \
+    /usr/local/bin/condtux-install-gui
+
+# Genera los dos idiomas soportados antes del primer arranque.
+sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
+sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen
+update-locale LANG=en_US.UTF-8 LANGUAGE=en_US:en
+
+# Prepara el lanzador tanto para el escritorio como para el menu de aplicaciones.
+chmod 0755 /etc/skel/Desktop/condtux-install.desktop
+install -D -m 0644 \
+    /etc/skel/Desktop/condtux-install.desktop \
+    /usr/share/applications/condtux-install.desktop
+
+# Integra en el instalador las herramientas de idioma y GUI del sistema final.
+INSTALLER="/usr/local/sbin/condtux-install"
+if [ -f "$INSTALLER" ]; then
+    sed -i \
+        -e 's/Condtux Installer 0\.9/Condtux Installer 0.10/g' \
+        -e 's/Condtux 0\.9/Condtux 0.10/g' \
+        -e 's#github.com/jechugit/#github.com/jesunixtux/#g' \
+        "$INSTALLER"
+
+    if ! grep -q '^[[:space:]]*kbd \\' "$INSTALLER"; then
+        sed -i '/keyboard-configuration \\/a\  kbd \\\n  whiptail \\' "$INSTALLER"
+    fi
+
+    if ! grep -q '^[[:space:]]*xfce4-terminal \\' "$INSTALLER"; then
+        sed -i '/lightdm-gtk-greeter \\/a\    xfce4-terminal \\\n    zenity \\' "$INSTALLER"
+    fi
+
+    if ! grep -q 'condtux-copy-live-language-target' "$INSTALLER"; then
+        sed -i '/chroot "\$TARGET" \/bin\/bash \/tmp\/condtux-chroot-setup.sh/a\    /usr/local/sbin/condtux-copy-live-language-target "$TARGET"' "$INSTALLER"
+    fi
+
+    chmod 0755 "$INSTALLER"
+fi
 
 if ! id condtux >/dev/null 2>&1; then
     useradd -m -s /bin/bash -c "Condtux Live User" condtux
@@ -9,7 +52,6 @@ fi
 
 echo "condtux:live" | chpasswd
 echo "root:live" | chpasswd
-
 usermod -aG sudo,audio,video,plugdev,netdev condtux || true
 
 mkdir -p /etc/sudoers.d
@@ -18,6 +60,11 @@ condtux ALL=(ALL) NOPASSWD:ALL
 SUDO
 chmod 0440 /etc/sudoers.d/condtux-live
 
+mkdir -p /home/condtux/Desktop
+cp -f /etc/skel/Desktop/condtux-install.desktop /home/condtux/Desktop/condtux-install.desktop
+chmod 0755 /home/condtux/Desktop/condtux-install.desktop
+chown -R condtux:condtux /home/condtux
+
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<'GETTY'
 [Service]
@@ -25,4 +72,6 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin condtux --noclear %I $TERM
 GETTY
 
-echo "[ Condtux ] Usuario Live listo."
+systemctl enable condtux-live-setup.service
+
+echo "[ Condtux ] Usuario y configuracion Live listos."

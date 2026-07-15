@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+TARGET="${1:-/mnt}"
+
+if [ ! -d "$TARGET/etc" ]; then
+    echo "[ Condtux ] ERROR: destino invalido para idioma: $TARGET" >&2
+    exit 1
+fi
+
+mkdir -p "$TARGET/etc/default" "$TARGET/etc/condtux" "$TARGET/usr/local/sbin"
+
+[ -f /etc/default/locale ] && cp -f /etc/default/locale "$TARGET/etc/default/locale"
+[ -f /etc/default/keyboard ] && cp -f /etc/default/keyboard "$TARGET/etc/default/keyboard"
+[ -f /etc/condtux/language.conf ] && cp -f /etc/condtux/language.conf "$TARGET/etc/condtux/language.conf"
+
+install -m 0755 /usr/local/sbin/condtux-language "$TARGET/usr/local/sbin/condtux-language"
+
+if [ -f "$TARGET/etc/locale.gen" ]; then
+    sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' "$TARGET/etc/locale.gen"
+    sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$TARGET/etc/locale.gen"
+fi
+
+chroot "$TARGET" locale-gen >/dev/null 2>&1 || true
+
+echo "[ Condtux ] Idioma y teclado del Live copiados al sistema instalado."

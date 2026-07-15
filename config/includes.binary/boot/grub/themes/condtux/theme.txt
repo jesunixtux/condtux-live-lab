@@ -1,4 +1,4 @@
-title-text: "Condtux GNU/Linux 0.9"
+title-text: "Condtux GNU/Linux 0.10"
 title-font: "Unifont Regular 32"
 title-color: "#ffffff"
 desktop-color: "#05080d"
@@ -16,7 +16,7 @@ terminal-box: "terminal_box_*.png"
     left = 6%
     width = 88%
     height = 60
-    text = "Condtux GNU/Linux 0.9"
+    text = "Condtux GNU/Linux 0.10"
     font = "Unifont Regular 32"
     color = "#ffffff"
     align = "left"

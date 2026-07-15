@@ -1,10 +1,10 @@
-PRETTY_NAME="Condtux 0.9 Live"
+PRETTY_NAME="Condtux 0.10 Live"
 NAME="Condtux"
-VERSION_ID="0.9"
-VERSION="0.9 Live"
+VERSION_ID="0.10"
+VERSION="0.10 Live"
 VERSION_CODENAME=trixie
 ID=condtux
 ID_LIKE=debian
-HOME_URL="https://github.com/jechugit/condtux-live-lab"
+HOME_URL="https://github.com/jesunixtux/condtux-live-lab"
 SUPPORT_URL="https://repo-condtux.jeval.cl/"
-BUG_REPORT_URL="https://github.com/jechugit/condtux-live-lab/issues"
+BUG_REPORT_URL="https://github.com/jesunixtux/condtux-live-lab/issues"

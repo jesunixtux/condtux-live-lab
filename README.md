@@ -56,7 +56,7 @@ git pull --ff-only origin condtux-0.10
 Para cambiar todo el proyecto a Condtux 0.11:
 
 ```bash
-scripts/set-version.sh 0.11
+sh scripts/set-version.sh 0.11
 git add VERSION README.md config scripts packages
 git commit -m "Preparar Condtux 0.11"
 git push

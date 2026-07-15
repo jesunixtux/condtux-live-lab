@@ -30,8 +30,8 @@ LB_BOOTLOADERS="syslinux grub-efi"
 # Set checksums
 LB_CHECKSUMS="sha256 md5"
 
-# Set compression
-LB_COMPRESSION="none"
+# SquashFS: xz es compatible con live-build de Debian 13 y prioriza tamano.
+LB_COMPRESSION="xz"
 
 # Support dm-verity on rootfs
 LB_DM_VERITY=""
@@ -61,7 +61,7 @@ LB_DEBIAN_INSTALLER_PRESEEDFILE=""
 LB_DEBIAN_INSTALLER_GUI="false"
 
 # Set hdd label
-LB_HDD_LABEL="DEBIAN_LIVE"
+LB_HDD_LABEL="CONDTUX"
 
 # Set hdd filesystem size
 LB_HDD_SIZE="auto"
@@ -70,7 +70,7 @@ LB_HDD_SIZE="auto"
 LB_HDD_PARTITION_START=""
 
 # Set iso author
-LB_ISO_APPLICATION="Condtux 0.10 Live"
+LB_ISO_APPLICATION="Condtux 0.11 Live"
 
 # Set iso preparer
 LB_ISO_PREPARER="Condtux Project"
@@ -79,7 +79,7 @@ LB_ISO_PREPARER="Condtux Project"
 LB_ISO_PUBLISHER="Condtux Project; based on Debian Live"
 
 # Set iso volume (max 32 chars)
-LB_ISO_VOLUME="CONDTUX010"
+LB_ISO_VOLUME="CONDTUX011"
 
 # Set jffs2 eraseblock size
 LB_JFFS2_ERASEBLOCK=""
@@ -114,6 +114,5 @@ LB_SWAP_FILE_PATH=""
 # Set swap file size
 LB_SWAP_FILE_SIZE="512"
 
-# Secure Boot no esta soportado por Condtux por ahora.
-# live-build acepta auto, enable o disable; no acepta true/false aqui.
-LB_UEFI_SECURE_BOOT="disable"
+# Usa shim y GRUB firmados de Debian. Arranca con Secure Boot activado o desactivado.
+LB_UEFI_SECURE_BOOT="enable"

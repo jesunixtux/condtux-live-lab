@@ -52,7 +52,7 @@ lb config \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \
   --uefi-secure-boot enable \
-  --compression zstd \
+  --compression xz \
   --iso-volume "CONDTUX${VERSION_COMPACT}" \
   --iso-application "Condtux ${VERSION} Live" \
   --iso-preparer "Condtux Project" \
@@ -72,7 +72,7 @@ if [ -f config/binary ]; then
   sed -i 's#^LB_DEBIAN_INSTALLER_PRESEEDFILE=.*#LB_DEBIAN_INSTALLER_PRESEEDFILE=""#' config/binary
   sed -i 's#^LB_BOOTAPPEND_INSTALL=.*#LB_BOOTAPPEND_INSTALL=""#' config/binary
   sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="enable"#' config/binary
-  sed -i 's#^LB_COMPRESSION=.*#LB_COMPRESSION="zstd"#' config/binary
+  sed -i 's#^LB_COMPRESSION=.*#LB_COMPRESSION="xz"#' config/binary
 fi
 
 echo "[ ${PROJECT_NAME} ] Construyendo ISO..."

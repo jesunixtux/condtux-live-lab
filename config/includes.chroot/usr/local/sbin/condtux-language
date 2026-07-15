@@ -1,0 +1,93 @@
+#!/bin/bash
+set -euo pipefail
+
+MODE="${1:-normal}"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run / Ejecuta: sudo condtux-language" >&2
+    exit 1
+fi
+
+if ! command -v whiptail >/dev/null 2>&1; then
+    echo "whiptail is required / se requiere whiptail" >&2
+    exit 1
+fi
+
+LANG_CHOICE="$(whiptail --nocancel --title "Condtux - Language / Idioma" \
+    --menu "Choose the system language.\nElige el idioma del sistema." 15 72 2 \
+    en "English" \
+    es "Español" \
+    3>&1 1>&2 2>&3)"
+
+case "$LANG_CHOICE" in
+    es)
+        SYSTEM_LOCALE="es_CL.UTF-8"
+        SYSTEM_LANGUAGE="es_CL:es"
+        ;;
+    *)
+        LANG_CHOICE="en"
+        SYSTEM_LOCALE="en_US.UTF-8"
+        SYSTEM_LANGUAGE="en_US:en"
+        ;;
+esac
+
+KEYBOARD_CHOICE="$(whiptail --nocancel --title "Condtux - Keyboard / Teclado" \
+    --menu "Choose the keyboard layout.\nElige la distribución del teclado." 17 76 3 \
+    latam "Latin American / Latinoamericano" \
+    es "Spanish (Spain) / Español (España)" \
+    us "English (US) / Inglés (EE. UU.)" \
+    3>&1 1>&2 2>&3)"
+
+case "$KEYBOARD_CHOICE" in
+    latam)
+        XKB_LAYOUT="latam"
+        CONSOLE_KEYMAP="la-latin1"
+        ;;
+    es)
+        XKB_LAYOUT="es"
+        CONSOLE_KEYMAP="es"
+        ;;
+    *)
+        KEYBOARD_CHOICE="us"
+        XKB_LAYOUT="us"
+        CONSOLE_KEYMAP="us"
+        ;;
+esac
+
+sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
+sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen >/dev/null
+
+cat > /etc/default/locale <<EOF
+LANG=${SYSTEM_LOCALE}
+LANGUAGE=${SYSTEM_LANGUAGE}
+EOF
+
+update-locale LANG="$SYSTEM_LOCALE" LANGUAGE="$SYSTEM_LANGUAGE"
+
+cat > /etc/default/keyboard <<EOF
+XKBMODEL="pc105"
+XKBLAYOUT="${XKB_LAYOUT}"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+EOF
+
+loadkeys "$CONSOLE_KEYMAP" >/dev/null 2>&1 || true
+setupcon --force >/dev/null 2>&1 || true
+
+mkdir -p /etc/condtux
+cat > /etc/condtux/language.conf <<EOF
+CONDTUX_LANGUAGE=${LANG_CHOICE}
+CONDTUX_LOCALE=${SYSTEM_LOCALE}
+CONDTUX_KEYBOARD=${KEYBOARD_CHOICE}
+CONDTUX_XKB_LAYOUT=${XKB_LAYOUT}
+EOF
+
+if [ "$MODE" != "--live" ]; then
+    if [ "$LANG_CHOICE" = "es" ]; then
+        whiptail --title "Condtux" --msgbox "Idioma y teclado actualizados. Cierra la sesión o reinicia para aplicar todos los cambios." 11 72
+    else
+        whiptail --title "Condtux" --msgbox "Language and keyboard updated. Log out or reboot to apply every change." 11 72
+    fi
+fi

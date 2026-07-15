@@ -5,10 +5,12 @@ case "${LANG:-en}" in
     es*)
         TITLE="Instalar Condtux"
         QUESTION="Se abrirá el instalador de Condtux en una ventana segura. ¿Quieres continuar?"
+        CLOSE_TEXT="Presiona Enter para cerrar..."
         ;;
     *)
         TITLE="Install Condtux"
         QUESTION="The Condtux installer will open in a secure window. Do you want to continue?"
+        CLOSE_TEXT="Press Enter to close..."
         ;;
 esac
 
@@ -16,8 +18,8 @@ if command -v zenity >/dev/null 2>&1; then
     zenity --question --title="$TITLE" --text="$QUESTION" --width=440 || exit 0
 fi
 
-if command -v xfce4-terminal >/dev/null 2>&1; then
-    exec xfce4-terminal --hold --title="$TITLE" --command="sudo /usr/local/sbin/condtux-install"
+if command -v xterm >/dev/null 2>&1; then
+    exec xterm -T "$TITLE" -e sh -c 'sudo /usr/local/sbin/condtux-install; printf "\n%s" "$1"; read answer' sh "$CLOSE_TEXT"
 fi
 
 if command -v x-terminal-emulator >/dev/null 2>&1; then

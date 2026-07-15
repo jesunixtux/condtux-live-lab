@@ -1,21 +1,32 @@
 #!/bin/sh
 
+VERSION="$(cat /etc/condtux-version 2>/dev/null || printf '0.10')"
+
 echo
 echo "===================================================="
-echo " Condtux 0.9 Live Installer"
-echo " Para instalar Condtux al disco:"
-echo
-echo "   sudo condtux-install"
-echo
-echo " Modo facil: disco completo automatico."
-echo " Modo experto: particiones EFI/root manuales."
-echo " Permite elegir minimal, XFCE y tecnologias opcionales."
-echo " Permite crear usuario propio y elegir modo sudo/root."
-if grep -qw 'condtux.install=1' /proc/cmdline 2>/dev/null; then
-    echo
-    echo " Arrancaste desde la entrada de instalacion."
-    echo " Ejecuta el comando anterior para comenzar."
-fi
-echo
+
+case "${LANG:-en}" in
+    es*)
+        echo " Instalador Live de Condtux ${VERSION}"
+        echo " Para instalar Condtux al disco:"
+        echo
+        echo "   sudo condtux-install"
+        echo
+        echo " Con XFCE también puedes usar el icono Instalar Condtux."
+        echo " Modo fácil: disco completo automático."
+        echo " Modo experto: particiones EFI/root manuales."
+        ;;
+    *)
+        echo " Condtux ${VERSION} Live Installer"
+        echo " To install Condtux on disk:"
+        echo
+        echo "   sudo condtux-install"
+        echo
+        echo " With XFCE you can also use the Install Condtux icon."
+        echo " Easy mode: automatic full-disk installation."
+        echo " Expert mode: manual EFI/root partitions."
+        ;;
+esac
+
 echo "===================================================="
 echo

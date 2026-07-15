@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+echo "[ Condtux ] Habilitando selector inicial de idioma y teclado..."
+
+chmod 0755 \
+    /usr/local/sbin/condtux-language \
+    /usr/local/sbin/condtux-live-setup
+
+systemctl enable condtux-live-setup.service
+
+echo "[ Condtux ] Selector inicial habilitado."

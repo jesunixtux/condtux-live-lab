@@ -24,6 +24,10 @@ esac
 echo "[ ${PROJECT_NAME} ] Aplicando version central..."
 sh scripts/apply-version.sh
 
+# GitHub Contents crea archivos nuevos sin bit ejecutable. Normalizamos los
+# hooks antes de que live-build los enlace.
+chmod +x config/hooks/normal/*.hook.chroot config/hooks/normal/*.hook.binary 2>/dev/null || true
+
 echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
 sudo lb clean --all || true
 sudo rm -rf cache/bootstrap cache/packages.bootstrap cache/packages.chroot cache/packages.binary
@@ -36,7 +40,6 @@ mkdir -p output logs
 echo "[ ${PROJECT_NAME} ] Sincronizando wallpapers..."
 scripts/sync-wallpapers.sh
 
-# El wallpaper clasico queda reservado para GRUB.
 install -D -m 0644 image/condtux_imagen_system/system_wallpaper_condtux.png \
   config/includes.binary/boot/grub/themes/condtux/background.png
 
@@ -44,7 +47,7 @@ echo "[ ${PROJECT_NAME} ] Reconfigurando live-build..."
 lb config \
   --distribution trixie \
   --architectures amd64 \
-  --archive-areas "main" \
+  --archive-areas "main non-free-firmware" \
   --binary-images iso-hybrid \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \

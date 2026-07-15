@@ -1,14 +1,9 @@
 sudo
-openssh-server
 nano
 curl
 wget
-git
 ca-certificates
-unattended-upgrades
-apt-listchanges
 bash-completion
-net-tools
 iproute2
 iputils-ping
 pciutils
@@ -24,3 +19,7 @@ network-manager
 live-config
 live-boot
 whiptail
+shim-signed
+grub-efi-amd64-signed
+grub-efi-amd64-bin
+zstd

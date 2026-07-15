@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+if ! grep -qw 'boot=live' /proc/cmdline 2>/dev/null; then
+    exit 0
+fi
+
+MARKER="/run/condtux-live-setup.done"
+
+if [ -f "$MARKER" ]; then
+    exit 0
+fi
+
+clear || true
+printf '\n  Condtux Live - First setup / Configuracion inicial\n\n'
+/usr/local/sbin/condtux-language --live
+mkdir -p /run
+touch "$MARKER"
+clear || true

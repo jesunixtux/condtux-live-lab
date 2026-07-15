@@ -1,35 +1,37 @@
 # Condtux Live Lab
 
-Laboratorio reproducible para construir una ISO Live instalable de Condtux sobre
-Debian 13 trixie amd64 con `live-build`.
+Laboratorio reproducible para construir una ISO Live instalable de Condtux sobre Debian 13 trixie amd64 con `live-build`.
 
-La ISO arranca en modo Live y el instalador propio se ejecuta con:
+Condtux usa un instalador propio desde el Live:
 
 ```bash
 sudo condtux-install
 ```
 
-Condtux no depende de Debian Installer en este flujo. El instalador actual esta
-pensado para UEFI y amd64.
+En XFCE también aparece el acceso **Instalar Condtux / Install Condtux** en el escritorio y en el menú de aplicaciones.
 
-## Condtux 0.9
+## Condtux 0.10
 
-La linea 0.9 mantiene lo que ya funcionaba en 0.8 y suma:
+La versión 0.10 añade:
 
-- branding Condtux en GRUB, fondos del Live y textos del sistema
-- imagen principal en `image/condtux_imagen_system/system_wallpaper_condtux.png`
-- instalador con modo facil y modo experto
-- modo facil: disco completo, GPT, EFI FAT32 y root ext4
-- modo experto: seleccion manual de particion EFI y particion root
-- passwords en terminal con mascara visual de asteriscos
-- soporte opcional para firmware libre, Bluetooth, impresion y agentes de VM
-- XFCE instalado en el Live, pero desactivado por defecto
+- selección obligatoria de idioma al iniciar el Live: español o inglés
+- selección de teclado: latinoamericano, español de España o inglés de Estados Unidos
+- el sistema instalado hereda el idioma y teclado elegidos en el Live
+- comando `sudo condtux-language` para cambiar idioma y teclado después
+- lanzador gráfico del instalador cuando XFCE está activo
+- eliminación de la entrada GRUB duplicada `Instalar Condtux desde Live`
+- `defaultwallpaper.png` como fondo del escritorio
+- `system_wallpaper_condtux.png` reservado para GRUB
+- versión centralizada en el archivo `VERSION`
+- Secure Boot desactivado explícitamente por ahora
 
-Para activar XFCE durante una sesion Live:
+## Activar XFCE en el Live
 
 ```bash
 sudo condtux-live-xfce
 ```
+
+Después de iniciar XFCE, usa el icono **Instalar Condtux** del escritorio.
 
 El paquete `condtux-xfce-desktop` debe estar publicado en:
 
@@ -37,83 +39,76 @@ El paquete `condtux-xfce-desktop` debe estar publicado en:
 https://repo-condtux.jeval.cl/apt
 ```
 
-Ese paquete debe compilarse desde las fuentes oficiales de Xfce, no desde los
-metapaquetes `xfce4` o `task-xfce-desktop` de Debian. El helper inicial esta en:
+Mientras ese paquete no exista en el repositorio, la construcción fallará de forma intencional para evitar una ISO gráfica incompleta.
+
+## Actualizar el repositorio local
+
+Para obtener la rama de desarrollo 0.10:
 
 ```bash
-packages/condtux-xfce-desktop/build-from-source.sh
+git fetch origin
+git switch condtux-0.10
+git pull --ff-only origin condtux-0.10
 ```
 
-Mientras `condtux-xfce-desktop` no exista en el repo Condtux, la build fallara
-de forma intencional para evitar una Live grafica a medias.
+## Preparar una versión futura
 
-## Builder actual
-
-Builder de laboratorio:
-
-```text
-builder@192.168.1.96
-```
-
-Desde tu maquina:
+Para cambiar todo el proyecto a Condtux 0.11:
 
 ```bash
-ssh builder@192.168.1.96
+scripts/set-version.sh 0.11
+git add VERSION README.md config scripts packages
+git commit -m "Preparar Condtux 0.11"
+git push
+```
+
+El script actualiza los nombres de ISO, textos del sistema, GRUB, instalador y versión del paquete XFCE.
+
+## Builder
+
+En el builder Debian amd64:
+
+```bash
 cd /home/builder/condtux-live-lab
-printf '%s\n' '2952404' | sudo -S bash scripts/build-live-iso.sh
+sudo bash scripts/build-live-iso.sh
 ```
 
-## Estructura
+Nunca guardes contraseñas en comandos, scripts o documentación del repositorio.
+
+## Estructura principal
 
 ```text
 condtux-live-lab/
+|-- VERSION
 |-- config/
 |   |-- hooks/
 |   |-- includes.binary/
 |   |-- includes.chroot/
-|   |-- includes.installer/
 |   `-- package-lists/
 |-- image/
 |   |-- condtux_imagen_system/
 |   `-- wallpapers/
 |-- packages/
 |-- scripts/
+|   |-- apply-version.sh
 |   |-- build-live-iso.sh
+|   |-- set-version.sh
 |   `-- sync-wallpapers.sh
-|-- .gitignore
+|-- output/
 `-- README.md
 ```
 
-Rutas importantes:
-
-- `config/package-lists/`: paquetes base del Live.
-- `config/includes.chroot/`: archivos incluidos dentro del filesystem Live.
-- `config/includes.binary/`: archivos incluidos en el arbol ISO.
-- `config/hooks/`: hooks de `live-build`.
-- `image/condtux_imagen_system/`: imagen principal del sistema y GRUB.
-- `image/wallpapers/`: wallpapers fuente del proyecto.
-- `scripts/build-live-iso.sh`: punto de entrada principal de build.
-- `output/`: ISOs generadas, ignoradas por Git.
-
-El wallpaper principal de sistema y GRUB es:
+Fondos:
 
 ```text
+image/wallpapers/defaultwallpaper.png
+    Fondo predeterminado del escritorio.
+
 image/condtux_imagen_system/system_wallpaper_condtux.png
-```
-
-Antes de construir, el script de build sincroniza wallpapers y copia la imagen
-principal hacia:
-
-```text
-config/includes.binary/boot/grub/themes/condtux/background.png
-config/includes.chroot/usr/share/backgrounds/condtux/defaultwallpaper.png
-config/includes.chroot/usr/share/backgrounds/condtux/system_wallpaper_condtux.png
+    Fondo reservado para GRUB.
 ```
 
 ## Requisitos del builder
-
-Usa un builder Debian amd64 con espacio suficiente para los artefactos de
-`live-build`.
 
 ```bash
 sudo apt update
@@ -130,61 +125,48 @@ sudo apt install -y \
   ca-certificates
 ```
 
-## Build de la ISO
-
-Desde la raiz del repositorio:
+## Construir la ISO
 
 ```bash
 scripts/build-live-iso.sh
 ```
 
-La ISO queda en:
+Resultado:
 
 ```text
-output/condtux-0.9-amd64.iso
+output/condtux-0.10-amd64.iso
+output/condtux-0.10-amd64.iso.sha256
 ```
 
-## Validaciones rapidas
+## Validaciones rápidas
 
 ```bash
 bash -n scripts/build-live-iso.sh
+bash -n scripts/apply-version.sh
+bash -n scripts/set-version.sh
 bash -n config/includes.chroot/usr/local/sbin/condtux-install
-bash -n config/includes.chroot/usr/local/sbin/condtux-first-config
+bash -n config/includes.chroot/usr/local/sbin/condtux-language
+bash -n config/includes.chroot/usr/local/sbin/condtux-live-setup
+bash -n config/includes.chroot/usr/local/sbin/condtux-copy-live-language-target
+bash -n config/includes.chroot/usr/local/bin/condtux-install-gui
 bash -n config/includes.chroot/usr/local/sbin/condtux-live-xfce
-bash -n packages/condtux-xfce-desktop/build-from-source.sh
+
+test -s image/wallpapers/defaultwallpaper.png
 test -s image/condtux_imagen_system/system_wallpaper_condtux.png
-test -s output/condtux-0.9-amd64.iso
+test -s output/condtux-0.10-amd64.iso
 test -s binary/EFI/BOOT/BOOTX64.EFI
-grep -q '^debootstrap[[:space:]]' binary/live/filesystem.packages
-grep -q '^grub-efi-amd64[[:space:]]' binary/live/filesystem.packages
-grep -q '^gdisk[[:space:]]' binary/live/filesystem.packages
+
+! grep -RIn 'Instalar Condtux desde Live' binary/boot/grub binary/EFI 2>/dev/null
 grep -q '^condtux-xfce-desktop[[:space:]]' binary/live/filesystem.packages
-```
-
-Si Debian Installer no esta incluido, GRUB no debe exponer entradas hacia rutas
-faltantes:
-
-```bash
-! grep -RIn '/install/vmlinuz\|/install/initrd.gz' binary/boot/grub binary/isolinux
 ```
 
 ## Higiene de Git
 
-Guarda en Git las recetas, hooks, scripts, assets y documentacion. No guardes:
+No guardes en Git:
 
-- directorios generados por build como `.build/`, `binary/`, `cache/` y `chroot/`
-- ISOs y discos virtuales
-- logs, descargas temporales y respaldos locales
-- estado local de editores o herramientas
+- ISOs, discos virtuales o imágenes generadas
+- directorios `binary/`, `cache/`, `chroot/` u `output/`
+- logs y descargas temporales
+- contraseñas, tokens o llaves privadas
 
-Si un archivo generado ya estaba trackeado, sacalo del indice antes de confiar en
-`.gitignore`:
-
-```bash
-git rm --cached path/to/generated-file
-```
-
-## Notas
-
-Este repositorio es el laboratorio de construccion. Los artefactos publicables
-deben distribuirse aparte con checksum y changelog.
+Los artefactos publicables deben distribuirse por separado con checksum y changelog.

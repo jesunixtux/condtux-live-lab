@@ -29,7 +29,7 @@ replace_if_exists() {
 replace_if_exists "$ROOT/config/binary" \
     -e "s#^LB_ISO_APPLICATION=.*#LB_ISO_APPLICATION=\"Condtux ${VERSION} Live\"#" \
     -e "s#^LB_ISO_VOLUME=.*#LB_ISO_VOLUME=\"CONDTUX${VERSION_COMPACT}\"#" \
-    -e 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="false"#' \
+    -e 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="disable"#' \
     -e 's#locales=[^ ]* keyboard-layouts=[^ ]*#locales=en_US.UTF-8 keyboard-layouts=us#g'
 
 replace_if_exists "$ROOT/config/includes.chroot/etc/os-release" \

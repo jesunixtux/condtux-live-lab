@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+VERSION="$(cat /etc/condtux-version 2>/dev/null || printf '0.11')"
+INSTALLER=/usr/local/sbin/condtux-install
+
+echo "[ Condtux 0.11 ] Aplicando optimizacion, Secure Boot e idiomas..."
+
+if [ -f "$INSTALLER" ]; then
+    # El sistema instalado usa la cadena firmada de Debian. Funciona con
+    # Secure Boot activado y tambien con Secure Boot desactivado.
+    sed -i \
+      -e 's/^[[:space:]]*grub-efi-amd64 \\$/  shim-signed \\\n  grub-efi-amd64-signed \\\n  grub-efi-amd64-bin \\/' \
+      -e '/^[[:space:]]*openssh-server \\$/d' \
+      -e '/^[[:space:]]*git \\$/d' \
+      -e '/^[[:space:]]*apt-listchanges \\$/d' \
+      "$INSTALLER"
+
+    # Copia inglesa con la misma logica de disco/UEFI de la version española.
+    cp -f "$INSTALLER" /usr/local/sbin/condtux-install-en
+    sed -i \
+      -e "s/Condtux Installer 0\.[0-9][0-9]*/Condtux Installer ${VERSION}/g" \
+      -e 's/Elige el modo de instalacion/Choose the installation mode/g' \
+      -e 's/Facil usa disco completo/Automatic uses the whole disk/g' \
+      -e 's/Experto permite elegir particiones EFI\/root existentes/Expert lets you choose existing EFI and root partitions/g' \
+      -e 's/Facil: borrar disco completo y particionar automaticamente/Automatic: erase the whole disk and partition automatically/g' \
+      -e 's/Experto: elegir particion EFI y root manualmente/Expert: select EFI and root partitions manually/g' \
+      -e 's/Instalacion cancelada/Installation cancelled/g' \
+      -e 's/Elige como quieres instalar/Choose how to install/g' \
+      -e 's/Minimal sin escritorio, ideal para terminal o servidor/Minimal without a desktop, ideal for terminal or server/g' \
+      -e 's/Escritorio XFCE de Condtux con LightDM/Condtux XFCE desktop with LightDM/g' \
+      -e 's/Soporte opcional para tecnologias nuevas/Optional hardware and service support/g' \
+      -e 's/Puedes dejar todo desmarcado para una instalacion limpia/Leave everything unchecked for a clean installation/g' \
+      -e 's/Firmware libre y base wireless/Firmware and wireless support/g' \
+      -e 's/Bluetooth con BlueZ/Bluetooth with BlueZ/g' \
+      -e 's/Impresion con CUPS/Printing with CUPS/g' \
+      -e 's/Agentes para VM/VM agents/g' \
+      -e 's/Seleccion/Selection/g' \
+      -e 's/Usuario/Username/g' \
+      -e 's/Contrasena/Password/g' \
+      -e 's/Confirmar/Confirm/g' \
+      -e 's/Continuar/Continue/g' \
+      /usr/local/sbin/condtux-install-en
+    chmod 0755 /usr/local/sbin/condtux-install-en
+fi
+
+# El Live no expone servidores ni servicios de hardware que el usuario no haya
+# elegido. NetworkManager, audio y el escritorio siguen disponibles.
+systemctl disable ssh.service ssh.socket 2>/dev/null || true
+systemctl disable bluetooth.service cups.service 2>/dev/null || true
+systemctl mask ModemManager.service 2>/dev/null || true
+
+# Evita guardar/restaurar sesiones XFCE completas, que aumenta RAM y demora.
+mkdir -p /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+cat > /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-session" version="1.0">
+  <property name="general" type="empty">
+    <property name="SaveOnExit" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+
+echo "[ Condtux 0.11 ] Ajustes finales aplicados."

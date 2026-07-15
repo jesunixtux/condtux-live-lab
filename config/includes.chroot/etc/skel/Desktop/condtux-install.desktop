@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install Condtux
+Name[es]=Instalar Condtux
+Comment=Install Condtux on this computer
+Comment[es]=Instalar Condtux en este equipo
+Exec=/usr/local/bin/condtux-install-gui
+Icon=system-software-install
+Terminal=false
+Categories=System;
+StartupNotify=true

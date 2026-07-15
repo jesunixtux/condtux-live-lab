@@ -6,13 +6,13 @@ NEW_VERSION="${1:-}"
 
 case "$NEW_VERSION" in
     ''|*[!0-9.]*|.*|*.)
-        echo "Uso: scripts/set-version.sh 0.11" >&2
+        echo "Uso: sh scripts/set-version.sh 0.11" >&2
         exit 1
         ;;
 esac
 
 printf '%s\n' "$NEW_VERSION" > "$ROOT/VERSION"
-"$ROOT/scripts/apply-version.sh"
+sh "$ROOT/scripts/apply-version.sh"
 
 echo
 echo "Version preparada: Condtux $NEW_VERSION"

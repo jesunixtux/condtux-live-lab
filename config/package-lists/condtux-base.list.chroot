@@ -23,3 +23,9 @@ shim-signed
 grub-efi-amd64-signed
 grub-efi-amd64-bin
 zstd
+firmware-linux-free
+firmware-misc-nonfree
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-amd-graphics

@@ -50,6 +50,7 @@ lb config \
   --binary-images iso-hybrid \
   --bootloaders "syslinux,grub-efi" \
   --debian-installer none \
+  --uefi-secure-boot disable \
   --iso-volume "CONDTUX${VERSION_COMPACT}" \
   --iso-application "Condtux ${VERSION} Live" \
   --iso-preparer "Condtux Project" \
@@ -69,7 +70,7 @@ if [ -f config/binary ]; then
   sed -i 's#^LB_DEBIAN_INSTALLER=.*#LB_DEBIAN_INSTALLER="none"#' config/binary
   sed -i 's#^LB_DEBIAN_INSTALLER_PRESEEDFILE=.*#LB_DEBIAN_INSTALLER_PRESEEDFILE=""#' config/binary
   sed -i 's#^LB_BOOTAPPEND_INSTALL=.*#LB_BOOTAPPEND_INSTALL=""#' config/binary
-  sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="false"#' config/binary
+  sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="disable"#' config/binary
   sed -i 's#preseed/file=/preseed.cfg file=/cdrom/install/config/includes.installer/condtux.seed#preseed/file=/preseed.cfg#g' config/binary
   sed -i 's# file=/cdrom/install/config/includes.installer/condtux.seed##g' config/binary
 fi

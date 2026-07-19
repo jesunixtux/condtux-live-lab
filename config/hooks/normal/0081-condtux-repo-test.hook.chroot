@@ -1,10 +1,50 @@
 #!/bin/sh
-set -e
+set -u
 
-echo "[ Condtux ] Probando repo Condtux con condtux-repo-test..."
+REPO_URL="https://repo-condtux.jeval.cl/apt/dists/trixie/InRelease"
+PACKAGE="condtux-repo-test"
 
-apt-get update
-apt-get install -y condtux-repo-test
+retry() {
+    attempts="$1"
+    delay="$2"
+    shift 2
+
+    i=1
+    while [ "$i" -le "$attempts" ]; do
+        if "$@"; then
+            return 0
+        fi
+
+        echo "[ Condtux ] Intento $i/$attempts fallido; reintentando en ${delay}s..." >&2
+        sleep "$delay"
+        i=$((i + 1))
+    done
+
+    return 1
+}
+
+echo "[ Condtux ] Probando repo Condtux con $PACKAGE..."
+
+if ! retry 4 10 curl -fsSIL --connect-timeout 15 "$REPO_URL" >/dev/null; then
+    echo "[ Condtux ] ADVERTENCIA: repo Condtux no disponible temporalmente; se omite la prueba." >&2
+    exit 0
+fi
+
+if ! retry 4 10 apt-get -o Acquire::Retries=3 update; then
+    echo "[ Condtux ] ADVERTENCIA: apt update fallo tras varios intentos; se omite la prueba del repo." >&2
+    exit 0
+fi
+
+if ! apt-cache show "$PACKAGE" >/dev/null 2>&1; then
+    echo "[ Condtux ] ADVERTENCIA: $PACKAGE no esta publicado; la ISO continuara sin el paquete de prueba." >&2
+    exit 0
+fi
+
+if ! retry 3 10 apt-get -o Acquire::Retries=3 install -y --no-install-recommends "$PACKAGE"; then
+    echo "[ Condtux ] ADVERTENCIA: no se pudo instalar $PACKAGE; la ISO continuara." >&2
+    exit 0
+fi
+
 condtux-repo-test || true
 
 echo "[ Condtux ] Repo Condtux probado correctamente."

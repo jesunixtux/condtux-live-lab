@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+TARGET="${1:-}"
+
+if [ -z "$TARGET" ] || [ ! -d "$TARGET/etc" ]; then
+    echo "Uso: condtux-copy-system-target /mnt" >&2
+    exit 1
+fi
+
+copy_file() {
+    source="$1"
+    destination="$TARGET$1"
+    mode="${2:-0644}"
+
+    [ -f "$source" ] || return 0
+    install -D -m "$mode" "$source" "$destination"
+}
+
+copy_file /usr/local/sbin/condtux-time-sync 0755
+copy_file /etc/systemd/system/condtux-time-sync.service
+copy_file /etc/systemd/timesyncd.conf.d/condtux.conf
+copy_file /etc/sysctl.d/60-condtux-hardening.conf
+copy_file /etc/nftables.conf
+copy_file /etc/systemd/journald.conf.d/60-condtux.conf
+
+echo "[ Condtux ] Sincronizacion horaria y seguridad copiadas al sistema instalado."

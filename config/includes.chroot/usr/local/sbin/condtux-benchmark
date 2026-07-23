@@ -14,6 +14,20 @@ OUT="${1:-$HOME/condtux-benchmark.txt}"
     echo "Kernel:"
     uname -a
     echo
+    echo "Clock synchronization:"
+    timedatectl status 2>/dev/null || true
+    echo
+    echo "Secure Boot:"
+    if command -v mokutil >/dev/null 2>&1; then
+        mokutil --sb-state 2>/dev/null || true
+    else
+        echo "mokutil not installed"
+    fi
+    echo
+    echo "Firewall:"
+    systemctl is-enabled nftables.service 2>/dev/null || true
+    nft list ruleset 2>/dev/null | sed -n '1,80p' || true
+    echo
     echo "Memory:"
     free -h
     echo
@@ -22,6 +36,9 @@ OUT="${1:-$HOME/condtux-benchmark.txt}"
     echo
     echo "Running services:"
     systemctl --no-pager --state=running --type=service 2>/dev/null || true
+    echo
+    echo "Failed services:"
+    systemctl --no-pager --failed 2>/dev/null || true
     echo
     echo "Boot time:"
     systemd-analyze 2>/dev/null || true

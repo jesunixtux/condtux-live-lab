@@ -1,44 +1,56 @@
 #!/bin/sh
 set -eu
 
-echo "[ Condtux ] Integrando servicio de configuracion XFCE..."
+CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
+DBUS_SERVICE="/usr/share/dbus-1/services/org.xfce.Xfconf.service"
 
-if ! dpkg-query -W -f='${Status}' xfconf 2>/dev/null | grep -q 'install ok installed'; then
-    apt-get update
-    apt-get install -y --no-install-recommends xfconf
-fi
+echo "[ Condtux ] Integrando xfconfd incluido en el escritorio Condtux..."
 
-XFCONFD_PATH="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
-
-if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
-    echo "[ Condtux ] ERROR: xfconf esta instalado, pero no se encontro un xfconfd ejecutable." >&2
+if ! dpkg-query -W -f='${Status}' "$CONDTUX_XFCE_PACKAGE" 2>/dev/null | grep -q 'install ok installed'; then
+    echo "[ Condtux ] ERROR: $CONDTUX_XFCE_PACKAGE no esta instalado." >&2
     exit 1
 fi
 
-# xfconfd es un daemon libexec y no suele estar en PATH. El enlace facilita
-# diagnostico y mantiene compatibles las validaciones de la ISO sin cambiar el
-# servicio D-Bus original de Debian.
-ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
+# El paquete monolitico puede instalar xfconfd bajo /usr/lib, /usr/libexec o
+# /opt. No se instala el paquete Debian xfconf porque duplicaria archivos de
+# condtux-xfce-desktop.
+XFCONFD_PATH="$(dpkg -L "$CONDTUX_XFCE_PACKAGE" 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
 
-if [ ! -f /usr/share/dbus-1/services/org.xfce.Xfconf.service ]; then
-    echo "[ Condtux ] ERROR: falta el servicio D-Bus org.xfce.Xfconf.service." >&2
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    XFCONFD_PATH="$(find /usr/lib /usr/libexec /opt/xfce-4.20 \
+        -type f -name xfconfd -perm /111 -print -quit 2>/dev/null || true)"
+fi
+
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: condtux-xfce-desktop no contiene un xfconfd ejecutable." >&2
+    echo "[ Condtux ] El paquete debe reconstruirse incluyendo el daemon de xfconf." >&2
+    exit 1
+fi
+
+ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
+mkdir -p /usr/share/dbus-1/services
+
+# Conserva el servicio proporcionado por el paquete cuando existe. Si el
+# paquete solo incluyo el daemon, crea la activacion D-Bus minima necesaria.
+if [ ! -f "$DBUS_SERVICE" ]; then
+    cat > "$DBUS_SERVICE" <<EOF
+[D-BUS Service]
+Name=org.xfce.Xfconf
+Exec=$XFCONFD_PATH
+EOF
+fi
+
+if ! grep -q '^Name=org\.xfce\.Xfconf$' "$DBUS_SERVICE"; then
+    echo "[ Condtux ] ERROR: $DBUS_SERVICE no registra org.xfce.Xfconf." >&2
     exit 1
 fi
 
 for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install-en; do
     [ -f "$installer" ] || continue
 
-    if ! grep -q '^[[:space:]]*xfconf \\' "$installer"; then
-        if grep -q '^[[:space:]]*dbus-user-session \\' "$installer"; then
-            sed -i '/^[[:space:]]*dbus-user-session \\/a\    xfconf \\' "$installer"
-        elif grep -q '^[[:space:]]*dbus-x11 \\' "$installer"; then
-            sed -i '/^[[:space:]]*dbus-x11 \\/a\    xfconf \\' "$installer"
-        else
-            echo "[ Condtux ] ERROR: no se encontro el bloque D-Bus del instalador para agregar xfconf." >&2
-            exit 1
-        fi
-    fi
-
+    # Una correccion anterior agregaba el paquete Debian xfconf. Se elimina:
+    # el perfil XFCE ya instala condtux-xfce-desktop, que contiene este runtime.
+    sed -i '/^[[:space:]]*xfconf \\$/d' "$installer"
     bash -n "$installer"
 done
 

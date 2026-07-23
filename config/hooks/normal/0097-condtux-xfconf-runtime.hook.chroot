@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+echo "[ Condtux ] Integrando servicio de configuracion XFCE..."
+
+if ! dpkg-query -W -f='${Status}' xfconf 2>/dev/null | grep -q 'install ok installed'; then
+    apt-get update
+    apt-get install -y --no-install-recommends xfconf
+fi
+
+XFCONFD_PATH="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: xfconf esta instalado, pero no se encontro un xfconfd ejecutable." >&2
+    exit 1
+fi
+
+# xfconfd es un daemon libexec y no suele estar en PATH. El enlace facilita
+# diagnostico y mantiene compatibles las validaciones de la ISO sin cambiar el
+# servicio D-Bus original de Debian.
+ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
+
+if [ ! -f /usr/share/dbus-1/services/org.xfce.Xfconf.service ]; then
+    echo "[ Condtux ] ERROR: falta el servicio D-Bus org.xfce.Xfconf.service." >&2
+    exit 1
+fi
+
+for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install-en; do
+    [ -f "$installer" ] || continue
+
+    if ! grep -q '^[[:space:]]*xfconf \\' "$installer"; then
+        if grep -q '^[[:space:]]*dbus-user-session \\' "$installer"; then
+            sed -i '/^[[:space:]]*dbus-user-session \\/a\    xfconf \\' "$installer"
+        elif grep -q '^[[:space:]]*dbus-x11 \\' "$installer"; then
+            sed -i '/^[[:space:]]*dbus-x11 \\/a\    xfconf \\' "$installer"
+        else
+            echo "[ Condtux ] ERROR: no se encontro el bloque D-Bus del instalador para agregar xfconf." >&2
+            exit 1
+        fi
+    fi
+
+    bash -n "$installer"
+done
+
+echo "[ Condtux ] xfconfd disponible en $XFCONFD_PATH y registrado por D-Bus."

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+if [ -r /etc/profile.d/condtux-xfce.sh ]; then
+    . /etc/profile.d/condtux-xfce.sh
+fi
+
+if ! command -v startxfce4 >/dev/null 2>&1; then
+    echo "[ Condtux ] No se encontro startxfce4 en PATH=$PATH" >&2
+    exit 1
+fi
+
+# LightDM normalmente ya entrega un bus de sesion. Al iniciar desde consola,
+# creamos uno para que xfconfd y el resto de XFCE puedan activarse por D-Bus.
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session -- startxfce4
+fi
+
+exec startxfce4

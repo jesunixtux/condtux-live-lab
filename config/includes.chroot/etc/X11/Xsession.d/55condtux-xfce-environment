@@ -1,0 +1,6 @@
+# Condtux XFCE runtime environment.
+# This file is sourced by /etc/X11/Xsession before the desktop starts.
+
+if [ -r /etc/profile.d/condtux-xfce.sh ]; then
+    . /etc/profile.d/condtux-xfce.sh
+fi

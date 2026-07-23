@@ -11,8 +11,12 @@ if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Xorg explicito: evita el metapaquete xorg y sus aplicaciones, fuentes y
-# documentacion innecesarias, pero conserva controladores para hardware real.
+# El paquete Condtux es monolitico y ya contiene xfconf, libxfce4util y el
+# resto del escritorio. No se deben mezclar paquetes XFCE equivalentes de
+# Debian porque ambos poseen los mismos archivos bajo /usr.
+#
+# Xorg se instala de forma explicita para conservar soporte de hardware real
+# sin arrastrar las aplicaciones y documentacion del metapaquete xorg.
 apt-get install -y --no-install-recommends \
     "$CONDTUX_XFCE_PACKAGE" \
     xserver-xorg-core \
@@ -35,7 +39,6 @@ apt-get install -y --no-install-recommends \
     pkexec \
     dbus-x11 \
     dbus-user-session \
-    xfconf \
     pipewire-audio \
     fonts-dejavu-core \
     hicolor-icon-theme

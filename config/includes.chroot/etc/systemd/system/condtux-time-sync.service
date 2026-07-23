@@ -6,8 +6,8 @@ Before=apt-daily.service apt-daily-upgrade.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/condtux-time-sync --best-effort
-TimeoutStartSec=75
+ExecStart=/usr/local/sbin/condtux-time-sync --boot
+TimeoutStartSec=30
 RemainAfterExit=yes
 
 [Install]

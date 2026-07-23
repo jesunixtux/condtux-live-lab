@@ -4,29 +4,80 @@ set -u
 MODE="${1:---best-effort}"
 TIMEOUT_SECONDS="${CONDTUX_TIME_TIMEOUT:-60}"
 
+case "$MODE" in
+    --boot)
+        TIMEOUT_SECONDS="${CONDTUX_TIME_BOOT_TIMEOUT:-15}"
+        ;;
+    --required|--best-effort)
+        ;;
+    *)
+        echo "Uso: condtux-time-sync [--boot|--required|--best-effort]" >&2
+        exit 2
+        ;;
+esac
+
 log() {
     printf '[ Condtux Time ] %s\n' "$*"
+}
+
+is_live() {
+    grep -qw 'boot=live' /proc/cmdline 2>/dev/null
 }
 
 is_synced() {
     [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)" = "yes" ]
 }
 
-sync_from_https_date() {
-    local header remote_date epoch
+valid_epoch() {
+    local value="$1"
+    # 2025-01-01 hasta 2040-01-01.
+    [ "$value" -ge 1735689600 ] 2>/dev/null && [ "$value" -le 2208988800 ] 2>/dev/null
+}
 
-    command -v curl >/dev/null 2>&1 || return 1
-    header="$(curl -fsSI --connect-timeout 8 --max-time 15 \
-        https://deb.debian.org/debian/dists/trixie/InRelease 2>/dev/null || true)"
+remote_epoch_insecure() {
+    local url="$1" header remote_date
+
+    header="$(curl -kfsSI --connect-timeout 7 --max-time 15 "$url" 2>/dev/null || true)"
     remote_date="$(printf '%s\n' "$header" | awk -F': ' 'tolower($1)=="date" {sub("\r$", "", $2); print $2; exit}')"
     [ -n "$remote_date" ] || return 1
+    date -u -d "$remote_date" +%s 2>/dev/null
+}
 
-    epoch="$(date -u -d "$remote_date" +%s 2>/dev/null || true)"
-    [ -n "$epoch" ] || return 1
+save_hardware_clock() {
+    if ! is_live; then
+        hwclock --systohc --utc >/dev/null 2>&1 || true
+    fi
+}
 
-    date -u -s "@$epoch" >/dev/null 2>&1 || return 1
-    hwclock --systohc --utc >/dev/null 2>&1 || true
-    log "Hora corregida mediante la fecha HTTPS de Debian."
+bootstrap_from_debian() {
+    local epoch_a epoch_b difference selected
+
+    command -v curl >/dev/null 2>&1 || return 1
+
+    # Se usa -k solamente para arrancar desde una BIOS con fecha absurda.
+    # Se exigen dos servidores Debian con menos de cinco minutos de diferencia.
+    epoch_a="$(remote_epoch_insecure https://deb.debian.org 2>/dev/null || printf 0)"
+    epoch_b="$(remote_epoch_insecure https://security.debian.org 2>/dev/null || printf 0)"
+
+    valid_epoch "$epoch_a" || return 1
+    valid_epoch "$epoch_b" || return 1
+
+    difference=$((epoch_a - epoch_b))
+    [ "$difference" -lt 0 ] && difference=$((-difference))
+    [ "$difference" -le 300 ] || return 1
+
+    selected="$epoch_a"
+    [ "$epoch_b" -gt "$selected" ] && selected="$epoch_b"
+    date -u -s "@$selected" >/dev/null 2>&1 || return 1
+
+    # Una vez corregida la fecha, TLS debe validar normalmente. Si no valida,
+    # el rescate se rechaza y el instalador no confiará en esa hora.
+    curl -fsSI --connect-timeout 8 --max-time 15 \
+        https://deb.debian.org/debian/dists/trixie/InRelease >/dev/null 2>&1 || return 1
+
+    save_hardware_clock
+    systemctl restart systemd-timesyncd.service >/dev/null 2>&1 || true
+    log "Hora recuperada y verificada con servidores Debian: $(date -R)"
     return 0
 }
 
@@ -35,7 +86,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if ! command -v timedatectl >/dev/null 2>&1; then
-    log "timedatectl no esta disponible."
+    log "timedatectl no está disponible."
     [ "$MODE" = "--required" ] && exit 1
     exit 0
 fi
@@ -46,26 +97,25 @@ timedatectl set-ntp true >/dev/null 2>&1 || true
 systemctl restart systemd-timesyncd.service >/dev/null 2>&1 || true
 
 if is_synced; then
-    hwclock --systohc --utc >/dev/null 2>&1 || true
+    save_hardware_clock
     log "Reloj sincronizado."
     exit 0
 fi
 
-log "Esperando sincronizacion de red y hora..."
+log "Esperando sincronización de red y hora..."
 for ((second = 0; second < TIMEOUT_SECONDS; second++)); do
     if is_synced; then
-        hwclock --systohc --utc >/dev/null 2>&1 || true
-        log "Reloj sincronizado por NTP."
+        save_hardware_clock
+        log "Reloj sincronizado por NTP: $(date -R)"
         exit 0
     fi
     sleep 1
 done
 
-# Fallback autenticado: solo usa la cabecera Date si HTTPS valido correctamente.
-if sync_from_https_date; then
+if bootstrap_from_debian; then
     exit 0
 fi
 
-log "No se pudo sincronizar la hora automaticamente."
+log "No se pudo sincronizar la hora automáticamente."
 [ "$MODE" = "--required" ] && exit 1
 exit 0

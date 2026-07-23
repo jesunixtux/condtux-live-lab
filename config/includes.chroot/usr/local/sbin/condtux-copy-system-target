@@ -23,5 +23,6 @@ copy_file /etc/systemd/timesyncd.conf.d/condtux.conf
 copy_file /etc/sysctl.d/60-condtux-hardening.conf
 copy_file /etc/nftables.conf
 copy_file /etc/systemd/journald.conf.d/60-condtux.conf
+copy_file /etc/apt/apt.conf.d/80condtux-network
 
 echo "[ Condtux ] Sincronizacion horaria y seguridad copiadas al sistema instalado."

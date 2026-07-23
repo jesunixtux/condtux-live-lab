@@ -11,9 +11,13 @@ if [ -f "$MARKER" ]; then
     exit 0
 fi
 
-clear || true
-printf '\n  Condtux Live - First setup / Configuracion inicial\n\n'
-/usr/local/sbin/condtux-language --live
 mkdir -p /run
+printf '\033c\033[?25l'
+printf '\n  Condtux 0.11 Live\n  First setup / Configuracion inicial\n\n'
+/usr/local/sbin/condtux-language --live
+
+# La sincronizacion continua en segundo plano mientras aparece la sesion Live.
+systemctl start condtux-time-sync.service >/dev/null 2>&1 &
+
 touch "$MARKER"
-clear || true
+printf '\033c\033[?25h'

@@ -1,0 +1,44 @@
+#!/bin/sh
+set -eu
+
+INSTALLER=/usr/local/sbin/condtux-install-en
+[ -f "$INSTALLER" ] || exit 0
+
+sed -i \
+  -e 's/Selectiona/Select/g' \
+  -e 's/Selecciona/Select/g' \
+  -e 's/Seleccion invalida/Invalid selection/g' \
+  -e 's/Seleccion fuera de rango/Selection out of range/g' \
+  -e 's/Modo de instalacion/Installation mode/g' \
+  -e 's/Perfil de instalacion/Installation profile/g' \
+  -e 's/Modo de administracion/Administration mode/g' \
+  -e 's/Elige como administrar el sistema instalado/Choose how to administer the installed system/g' \
+  -e 's/Mi usuario sera administrador con sudo; root queda bloqueado/My user will be an administrator with sudo; root remains locked/g' \
+  -e 's/Mi usuario sera normal y root tendra password separado/My user will be unprivileged and root will have a separate password/g' \
+  -e 's/Usuario administrador con sudo/Administrator user with sudo/g' \
+  -e 's/Usuario normal + root separado/Unprivileged user + separate root/g' \
+  -e 's/Nombre de usuario invalido/Invalid username/g' \
+  -e 's/Usa minusculas, numeros, guion o guion bajo/Use lowercase letters, numbers, hyphen or underscore/g' \
+  -e 's/Repite el password para/Repeat the password for/g' \
+  -e 's/Password para/Password for/g' \
+  -e 's/Este instalador solo soporta amd64\/x86_64/This installer only supports amd64\/x86_64/g' \
+  -e 's/Este instalador solo soporta arranque UEFI/This installer only supports UEFI boot/g' \
+  -e 's/Internet disponible/Internet connection available/g' \
+  -e 's/No se detecto internet suficiente para este perfil/No suitable Internet connection was detected for this profile/g' \
+  -e 's/No se pudo contactar los repos HTTPS necesarios/Required HTTPS repositories could not be reached/g' \
+  -e 's/Discos detectados/Detected disks/g' \
+  -e 's/Disco seleccionado/Selected disk/g' \
+  -e 's/Contenido actual/Current contents/g' \
+  -e 's/Esto borrara todo el disco seleccionado/This will erase the entire selected disk/g' \
+  -e 's/Estas seguro de que este es el disco correcto/Are you sure this is the correct disk/g' \
+  -e 's/No se detectaron discos instalables/No installable disks were detected/g' \
+  -e 's/No se modifico ningun disco/No disk was modified/g' \
+  -e 's/Descargando sistema base Debian trixie/Downloading the Debian trixie base system/g' \
+  -e 's/Configurando repositorios y fstab/Configuring repositories and fstab/g' \
+  -e 's/Preparando chroot/Preparing chroot/g' \
+  -e 's/Sincronizando y desmontando/Syncing data and unmounting/g' \
+  -e 's/Perfil/Profile/g' \
+  -e 's/Permisos/Permissions/g' \
+  "$INSTALLER"
+
+chmod 0755 "$INSTALLER"

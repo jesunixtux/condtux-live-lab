@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install-en; do
+    [ -f "$installer" ] || continue
+
+    sed -i \
+      -e 's#trixie-updates main$#trixie-updates main non-free-firmware#g' \
+      -e 's#trixie-security main$#trixie-security main non-free-firmware#g' \
+      -e '/^[[:space:]]*systemctl enable ssh[[:space:]]*$/d' \
+      "$installer"
+
+    bash -n "$installer"
+    grep -q 'condtux-time-sync --required' "$installer"
+    grep -q 'confirm_destructive_disk' "$installer"
+    grep -q 'condtux-copy-system-target' "$installer"
+    grep -q 'shimx64.efi' "$installer"
+    grep -q 'systemctl enable nftables.service' "$installer"
+done
+
+bash -n /usr/local/sbin/condtux-time-sync
+sh -n /usr/local/sbin/condtux-copy-system-target
+sh -n /usr/local/bin/condtux-install-gui
+
+echo "[ Condtux 0.11 ] Validacion final del instalador completada."

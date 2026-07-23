@@ -1,0 +1,71 @@
+#!/bin/bash
+set -u
+
+MODE="${1:---best-effort}"
+TIMEOUT_SECONDS="${CONDTUX_TIME_TIMEOUT:-60}"
+
+log() {
+    printf '[ Condtux Time ] %s\n' "$*"
+}
+
+is_synced() {
+    [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)" = "yes" ]
+}
+
+sync_from_https_date() {
+    local header remote_date epoch
+
+    command -v curl >/dev/null 2>&1 || return 1
+    header="$(curl -fsSI --connect-timeout 8 --max-time 15 \
+        https://deb.debian.org/debian/dists/trixie/InRelease 2>/dev/null || true)"
+    remote_date="$(printf '%s\n' "$header" | awk -F': ' 'tolower($1)=="date" {sub("\r$", "", $2); print $2; exit}')"
+    [ -n "$remote_date" ] || return 1
+
+    epoch="$(date -u -d "$remote_date" +%s 2>/dev/null || true)"
+    [ -n "$epoch" ] || return 1
+
+    date -u -s "@$epoch" >/dev/null 2>&1 || return 1
+    hwclock --systohc --utc >/dev/null 2>&1 || true
+    log "Hora corregida mediante la fecha HTTPS de Debian."
+    return 0
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+if ! command -v timedatectl >/dev/null 2>&1; then
+    log "timedatectl no esta disponible."
+    [ "$MODE" = "--required" ] && exit 1
+    exit 0
+fi
+
+systemctl unmask systemd-timesyncd.service >/dev/null 2>&1 || true
+systemctl enable systemd-timesyncd.service >/dev/null 2>&1 || true
+timedatectl set-ntp true >/dev/null 2>&1 || true
+systemctl restart systemd-timesyncd.service >/dev/null 2>&1 || true
+
+if is_synced; then
+    hwclock --systohc --utc >/dev/null 2>&1 || true
+    log "Reloj sincronizado."
+    exit 0
+fi
+
+log "Esperando sincronizacion de red y hora..."
+for ((second = 0; second < TIMEOUT_SECONDS; second++)); do
+    if is_synced; then
+        hwclock --systohc --utc >/dev/null 2>&1 || true
+        log "Reloj sincronizado por NTP."
+        exit 0
+    fi
+    sleep 1
+done
+
+# Fallback autenticado: solo usa la cabecera Date si HTTPS valido correctamente.
+if sync_from_https_date; then
+    exit 0
+fi
+
+log "No se pudo sincronizar la hora automaticamente."
+[ "$MODE" = "--required" ] && exit 1
+exit 0

@@ -8,6 +8,7 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
       -e 's#trixie-updates main$#trixie-updates main non-free-firmware#g' \
       -e 's#trixie-security main$#trixie-security main non-free-firmware#g' \
       -e '/^[[:space:]]*systemctl enable ssh[[:space:]]*$/d' \
+      -e '/^[[:space:]]*xfconf \\$/d' \
       "$installer"
 
     bash -n "$installer"
@@ -19,7 +20,11 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V2' "$installer"
     grep -q 'condtux-startxfce4' "$installer"
     grep -q 'dbus-user-session' "$installer"
-    grep -q '^[[:space:]]*xfconf \\' "$installer"
+
+    if grep -q '^[[:space:]]*xfconf \\$' "$installer"; then
+        echo "[ Condtux ] ERROR: el instalador intenta mezclar xfconf Debian con el escritorio Condtux." >&2
+        exit 1
+    fi
 done
 
 bash -n /usr/local/sbin/condtux-time-sync
@@ -31,10 +36,22 @@ sh -n /etc/X11/Xsession.d/55condtux-xfce-environment
 
 command -v startxfce4 >/dev/null 2>&1
 command -v xfce4-session >/dev/null 2>&1
-command -v xfconfd >/dev/null 2>&1
+XFCONFD_PATH="$(command -v xfconfd 2>/dev/null || true)"
+[ -n "$XFCONFD_PATH" ] && [ -x "$XFCONFD_PATH" ]
 
-dpkg-query -W -f='${Status}' xfconf 2>/dev/null | grep -q 'install ok installed'
+dpkg-query -W -f='${Status}' condtux-xfce-desktop 2>/dev/null | grep -q 'install ok installed'
 test -f /usr/share/dbus-1/services/org.xfce.Xfconf.service
+grep -q '^Name=org\.xfce\.Xfconf$' /usr/share/dbus-1/services/org.xfce.Xfconf.service
+
+# Estos paquetes poseen archivos que ya son parte del paquete monolitico.
+# Si aparecen instalados, una actualizacion futura podria volver a provocar
+# sobrescrituras o dejar dpkg en estado inconsistente.
+for duplicate in xfconf libxfce4util-common libxfce4util7; do
+    if dpkg-query -W -f='${Status}' "$duplicate" 2>/dev/null | grep -q 'install ok installed'; then
+        echo "[ Condtux ] ERROR: paquete XFCE Debian duplicado detectado: $duplicate" >&2
+        exit 1
+    fi
+done
 
 if [ -f /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml ] && \
    grep -q 'SaveOnExit' /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml && \
@@ -43,4 +60,4 @@ if [ -f /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml ] && \
     exit 1
 fi
 
-echo "[ Condtux 0.11 ] Instalador, cuentas, hora, seguridad, xfconf y XFCE validados."
+echo "[ Condtux 0.11 ] Instalador, cuentas, hora, seguridad y XFCE monolitico validados."

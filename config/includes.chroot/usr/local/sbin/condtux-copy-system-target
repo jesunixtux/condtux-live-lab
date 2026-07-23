@@ -25,4 +25,13 @@ copy_file /etc/nftables.conf
 copy_file /etc/systemd/journald.conf.d/60-condtux.conf
 copy_file /etc/apt/apt.conf.d/80condtux-network
 
-echo "[ Condtux ] Sincronizacion horaria y seguridad copiadas al sistema instalado."
+# El XFCE de Condtux vive en /opt/xfce-4.20. Estos archivos garantizan que
+# LightDM, Xsession, D-Bus y el sistema instalado encuentren sus binarios,
+# configuraciones, servicios y bibliotecas.
+copy_file /usr/local/bin/condtux-startxfce4 0755
+copy_file /etc/profile.d/condtux-xfce.sh
+copy_file /etc/X11/Xsession.d/55condtux-xfce-environment
+copy_file /etc/ld.so.conf.d/condtux-xfce.conf
+copy_file /usr/share/xsessions/condtux-xfce.desktop
+
+echo "[ Condtux ] Sincronizacion horaria, seguridad y entorno XFCE copiados al sistema instalado."

@@ -4,22 +4,144 @@ set -eu
 VERSION="$(cat /etc/condtux-version 2>/dev/null || printf '0.11')"
 INSTALLER=/usr/local/sbin/condtux-install
 
-echo "[ Condtux 0.11 ] Aplicando optimizacion, Secure Boot e idiomas..."
+echo "[ Condtux ${VERSION} ] Aplicando hora, seguridad y mejoras del instalador..."
+
+chmod 0755 \
+    /usr/local/sbin/condtux-time-sync \
+    /usr/local/sbin/condtux-copy-system-target \
+    /usr/local/bin/condtux-install-gui
 
 if [ -f "$INSTALLER" ]; then
-    # El sistema instalado usa la cadena firmada de Debian. Funciona con
-    # Secure Boot activado y tambien con Secure Boot desactivado.
     sed -i \
+      -e "s/Condtux Installer 0\.[0-9][0-9]*/Condtux Installer ${VERSION}/g" \
+      -e "s/Condtux 0\.[0-9][0-9]*/Condtux ${VERSION}/g" \
       -e 's/^[[:space:]]*grub-efi-amd64 \\$/  shim-signed \\\n  grub-efi-amd64-signed \\\n  grub-efi-amd64-bin \\/' \
       -e '/^[[:space:]]*openssh-server \\$/d' \
       -e '/^[[:space:]]*git \\$/d' \
       -e '/^[[:space:]]*apt-listchanges \\$/d' \
+      -e '/^[[:space:]]*systemctl enable ssh[[:space:]]*$/d' \
+      -e 's#trixie main$#trixie main non-free-firmware#g' \
+      -e '/origin=Debian,codename=trixie-updates/d' \
       "$INSTALLER"
 
-    # Copia inglesa con la misma logica de disco/UEFI de la version española.
+    if ! grep -q '^BACKTITLE=' "$INSTALLER"; then
+        cat > /tmp/condtux-installer-header <<EOF
+BACKTITLE="Condtux ${VERSION} | Secure installer"
+: "\${NEWT_COLORS:=root=white,black;window=white,black;border=brightcyan,black;title=brightcyan,black;button=black,brightcyan;actbutton=black,brightgreen;entry=white,blue;label=white,black;listbox=white,black;actlistbox=black,brightcyan;textbox=white,black;helpline=brightcyan,black;shadow=black,black}"
+export NEWT_COLORS
+whiptail() {
+    command whiptail --backtitle "\$BACKTITLE" "\$@"
+}
+EOF
+        awk '
+            /^HOSTNAME=/ {
+                print
+                while ((getline line < "/tmp/condtux-installer-header") > 0) print line
+                close("/tmp/condtux-installer-header")
+                next
+            }
+            { print }
+        ' "$INSTALLER" > "$INSTALLER.tmp"
+        mv "$INSTALLER.tmp" "$INSTALLER"
+    fi
+
+    if ! grep -q '^ensure_clock_ready()' "$INSTALLER"; then
+        cat > /tmp/condtux-installer-functions <<'EOF'
+ensure_clock_ready() {
+    if /usr/local/sbin/condtux-time-sync --required; then
+        echo "[ Condtux ] Hora sincronizada correctamente."
+        return 0
+    fi
+
+    if yesno "No se pudo sincronizar automaticamente el reloj.\n\nUna fecha incorrecta hace que APT rechace las firmas de Debian. Revisa la fecha de la BIOS/UEFI o corrigela manualmente.\n\nQuieres continuar bajo tu responsabilidad?"; then
+        return 0
+    fi
+
+    exit 1
+}
+
+confirm_destructive_disk() {
+    local disk="$1"
+    local typed=""
+
+    typed="$(inputbox "CONFIRMACION FINAL\n\nPara evitar borrar el disco equivocado, escribe exactamente:\n\n$disk\n\nLa instalacion no continuara si el texto no coincide." "")" || exit 0
+
+    if [ "$typed" != "$disk" ]; then
+        die "La confirmacion no coincide. No se modifico ningun disco."
+    fi
+}
+
+EOF
+        awk '
+            /^part_name\(\)/ {
+                while ((getline line < "/tmp/condtux-installer-functions") > 0) print line
+                close("/tmp/condtux-installer-functions")
+            }
+            { print }
+        ' "$INSTALLER" > "$INSTALLER.tmp"
+        mv "$INSTALLER.tmp" "$INSTALLER"
+    fi
+
+    grep -q '^[[:space:]]*systemd-timesyncd \\' "$INSTALLER" || \
+        sed -i '/^[[:space:]]*network-manager \\/a\  systemd-timesyncd \\\n  nftables \\\n  mokutil \\\n  firmware-linux-free \\\n  firmware-misc-nonfree \\\n  firmware-iwlwifi \\\n  firmware-realtek \\\n  firmware-atheros \\\n  firmware-amd-graphics \\\n  firmware-intel-graphics \\\n  firmware-intel-sound \\\n  firmware-sof-signed \\\n  firmware-nvidia-graphics \\\n  firmware-brcm80211 \\\n  firmware-mediatek \\\n  wireless-regdb \\\n  intel-microcode \\\n  amd64-microcode \\' "$INSTALLER"
+
+    grep -q 'condtux-copy-system-target' "$INSTALLER" || \
+        sed -i '/^[[:space:]]*copy_condtux_assets_target$/a\    /usr/local/sbin/condtux-copy-system-target "$TARGET"' "$INSTALLER"
+
+    grep -q '^[[:space:]]*ensure_clock_ready$' "$INSTALLER" || \
+        sed -i '/^    configure_network_if_needed$/a\    ensure_clock_ready' "$INSTALLER"
+
+    grep -q '^[[:space:]]*confirm_destructive_disk "\$disk"$' "$INSTALLER" || \
+        sed -i '/^        confirm_disk_choice "\$disk"$/a\        confirm_destructive_disk "$disk"' "$INSTALLER"
+
+    grep -q 'systemctl enable condtux-time-sync.service' "$INSTALLER" || \
+        sed -i '/^[[:space:]]*systemctl enable NetworkManager$/a\systemctl enable systemd-timesyncd.service\nsystemctl enable condtux-time-sync.service\nsystemctl enable nftables.service' "$INSTALLER"
+
+    if grep -q 'cp -f /boot/efi/EFI/Condtux/grubx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI' "$INSTALLER"; then
+        cat > /tmp/condtux-secure-fallback <<'EOF'
+if [ -f /boot/efi/EFI/Condtux/shimx64.efi ]; then
+  cp -f /boot/efi/EFI/Condtux/shimx64.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
+elif [ -f /usr/lib/shim/shimx64.efi.signed ]; then
+  cp -f /usr/lib/shim/shimx64.efi.signed /boot/efi/EFI/BOOT/BOOTX64.EFI
+elif [ -f /usr/lib/shim/shimx64.efi.signed.latest ]; then
+  cp -f /usr/lib/shim/shimx64.efi.signed.latest /boot/efi/EFI/BOOT/BOOTX64.EFI
+else
+  echo "No se encontro shim firmado para la ruta UEFI fallback." >&2
+  exit 1
+fi
+
+if [ -f /boot/efi/EFI/Condtux/grubx64.efi ]; then
+  cp -f /boot/efi/EFI/Condtux/grubx64.efi /boot/efi/EFI/BOOT/grubx64.efi
+elif [ -f /usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed ]; then
+  cp -f /usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed /boot/efi/EFI/BOOT/grubx64.efi
+fi
+
+if [ -f /boot/efi/EFI/Condtux/mmx64.efi ]; then
+  cp -f /boot/efi/EFI/Condtux/mmx64.efi /boot/efi/EFI/BOOT/mmx64.efi
+elif [ -f /usr/lib/shim/mmx64.efi ]; then
+  cp -f /usr/lib/shim/mmx64.efi /boot/efi/EFI/BOOT/mmx64.efi
+fi
+EOF
+        awk '
+            /cp -f \/boot\/efi\/EFI\/Condtux\/grubx64.efi \/boot\/efi\/EFI\/BOOT\/BOOTX64.EFI/ {
+                while ((getline line < "/tmp/condtux-secure-fallback") > 0) print line
+                close("/tmp/condtux-secure-fallback")
+                next
+            }
+            { print }
+        ' "$INSTALLER" > "$INSTALLER.tmp"
+        mv "$INSTALLER.tmp" "$INSTALLER"
+    fi
+
+    sed -i '/if \[ -z "$pass1" \]; then/,/^[[:space:]]*fi$/!b' "$INSTALLER" 2>/dev/null || true
+    if ! grep -q 'La contrasena debe tener al menos 8 caracteres' "$INSTALLER"; then
+        sed -i '/^[[:space:]]*if \[ "$pass1" != "$pass2" \]; then/i\        if [ "${#pass1}" -lt 8 ]; then\n            msg "La contrasena debe tener al menos 8 caracteres."\n            continue\n        fi\n' "$INSTALLER"
+    fi
+
+    chmod 0755 "$INSTALLER"
+
     cp -f "$INSTALLER" /usr/local/sbin/condtux-install-en
     sed -i \
-      -e "s/Condtux Installer 0\.[0-9][0-9]*/Condtux Installer ${VERSION}/g" \
       -e 's/Elige el modo de instalacion/Choose the installation mode/g' \
       -e 's/Facil usa disco completo/Automatic uses the whole disk/g' \
       -e 's/Experto permite elegir particiones EFI\/root existentes/Expert lets you choose existing EFI and root partitions/g' \
@@ -35,22 +157,39 @@ if [ -f "$INSTALLER" ]; then
       -e 's/Bluetooth con BlueZ/Bluetooth with BlueZ/g' \
       -e 's/Impresion con CUPS/Printing with CUPS/g' \
       -e 's/Agentes para VM/VM agents/g' \
+      -e 's/Nombre de usuario para el sistema instalado/Username for the installed system/g' \
+      -e 's/Nombre visible del usuario/Visible user name/g' \
+      -e 's/El password no puede quedar vacio/The password cannot be empty/g' \
+      -e 's/Los passwords no coinciden/The passwords do not match/g' \
+      -e 's/La contrasena debe tener al menos 8 caracteres/The password must be at least 8 characters long/g' \
+      -e 's/Selecciona el disco donde instalar Condtux/Select the disk where Condtux will be installed/g' \
+      -e 's/El disco elegido se borrara completo/The selected disk will be completely erased/g' \
+      -e 's/CONFIRMACION FINAL/FINAL CONFIRMATION/g' \
+      -e 's/Para evitar borrar el disco equivocado, escribe exactamente/To avoid erasing the wrong disk, type exactly/g' \
+      -e 's/La confirmacion no coincide. No se modifico ningun disco/The confirmation does not match. No disk was modified/g' \
+      -e 's/Hora sincronizada correctamente/Clock synchronized successfully/g' \
+      -e 's/No se pudo sincronizar automaticamente el reloj/The clock could not be synchronized automatically/g' \
+      -e 's/Condtux instalado correctamente/Condtux installed successfully/g' \
+      -e 's/Quieres reiniciar ahora/Do you want to restart now/g' \
+      -e 's/Instalando Condtux/Installing Condtux/g' \
       -e 's/Seleccion/Selection/g' \
-      -e 's/Usuario/Username/g' \
+      -e 's/Usuario/User/g' \
       -e 's/Contrasena/Password/g' \
-      -e 's/Confirmar/Confirm/g' \
       -e 's/Continuar/Continue/g' \
       /usr/local/sbin/condtux-install-en
     chmod 0755 /usr/local/sbin/condtux-install-en
 fi
 
-# El Live no expone servidores ni servicios de hardware que el usuario no haya
-# elegido. NetworkManager, audio y el escritorio siguen disponibles.
+# El Live no ofrece servicios remotos y bloquea la cuenta root conocida.
+passwd -l root >/dev/null 2>&1 || true
 systemctl disable ssh.service ssh.socket 2>/dev/null || true
 systemctl disable bluetooth.service cups.service 2>/dev/null || true
 systemctl mask ModemManager.service 2>/dev/null || true
 
-# Evita guardar/restaurar sesiones XFCE completas, que aumenta RAM y demora.
+systemctl enable systemd-timesyncd.service >/dev/null 2>&1 || true
+systemctl enable condtux-time-sync.service >/dev/null 2>&1 || true
+systemctl enable nftables.service >/dev/null 2>&1 || true
+
 mkdir -p /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
 cat > /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -61,4 +200,6 @@ cat > /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml <<'EOF'
 </channel>
 EOF
 
-echo "[ Condtux 0.11 ] Ajustes finales aplicados."
+rm -f /tmp/condtux-installer-header /tmp/condtux-installer-functions /tmp/condtux-secure-fallback
+
+echo "[ Condtux ${VERSION} ] Hora, instalador y seguridad listos."

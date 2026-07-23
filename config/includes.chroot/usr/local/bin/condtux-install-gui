@@ -1,14 +1,36 @@
 #!/bin/sh
 set -eu
 
-case "${LANG:-en}" in
-    es*)
-        TITLE="Instalar Condtux"
+DEFAULT_LANGUAGE="en"
+if [ -r /etc/condtux/language.conf ]; then
+    # shellcheck disable=SC1091
+    . /etc/condtux/language.conf
+    DEFAULT_LANGUAGE="${CONDTUX_LANGUAGE:-en}"
+elif printf '%s' "${LANG:-en}" | grep -qi '^es'; then
+    DEFAULT_LANGUAGE="es"
+fi
+
+export NEWT_COLORS='root=white,black;window=white,black;border=brightcyan,black;title=brightcyan,black;button=black,brightcyan;actbutton=black,brightgreen;compactbutton=white,black;checkbox=brightcyan,black;actcheckbox=black,brightcyan;entry=white,blue;label=white,black;listbox=white,black;actlistbox=black,brightcyan;textbox=white,black;acttextbox=black,brightcyan;helpline=brightcyan,black;roottext=white,black;emptyscale=white,black;fullscale=brightcyan,black;disentry=gray,black;shadow=black,black'
+
+LANGUAGE_CHOICE="$DEFAULT_LANGUAGE"
+if command -v whiptail >/dev/null 2>&1; then
+    LANGUAGE_CHOICE="$(whiptail --title 'Condtux Installer / Instalador' \
+        --default-item "$DEFAULT_LANGUAGE" \
+        --menu 'Choose the installer language.\nElige el idioma del instalador.' 15 66 2 \
+        en 'English' \
+        es 'Español' \
+        3>&1 1>&2 2>&3)" || exit 0
+fi
+
+case "$LANGUAGE_CHOICE" in
+    es)
+        TITLE="Instalar Condtux 0.11"
         INSTALLER="/usr/local/sbin/condtux-install"
         CLOSE_TEXT="Presiona Enter para cerrar..."
         ;;
     *)
-        TITLE="Install Condtux"
+        LANGUAGE_CHOICE="en"
+        TITLE="Install Condtux 0.11"
         INSTALLER="/usr/local/sbin/condtux-install-en"
         CLOSE_TEXT="Press Enter to close..."
         ;;
@@ -17,7 +39,16 @@ esac
 [ -x "$INSTALLER" ] || INSTALLER="/usr/local/sbin/condtux-install"
 
 if command -v xterm >/dev/null 2>&1; then
-    exec xterm -T "$TITLE" -geometry 112x36 -e sh -c 'sudo "$1"; printf "\n%s" "$2"; read answer' sh "$INSTALLER" "$CLOSE_TEXT"
+    exec xterm \
+        -T "$TITLE" \
+        -geometry 116x38 \
+        -fa Monospace \
+        -fs 11 \
+        -bg '#10151c' \
+        -fg '#e8edf2' \
+        -cr '#54d8ff' \
+        -e sh -c 'sudo env NEWT_COLORS="$1" CONDTUX_INSTALL_LANGUAGE="$2" "$3"; printf "\n%s" "$4"; read answer' \
+        sh "$NEWT_COLORS" "$LANGUAGE_CHOICE" "$INSTALLER" "$CLOSE_TEXT"
 fi
 
 if command -v x-terminal-emulator >/dev/null 2>&1; then

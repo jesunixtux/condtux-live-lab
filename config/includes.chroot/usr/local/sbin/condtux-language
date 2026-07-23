@@ -13,7 +13,11 @@ if ! command -v whiptail >/dev/null 2>&1; then
     exit 1
 fi
 
-LANG_CHOICE="$(whiptail --nocancel --title "Condtux - Language / Idioma" \
+export NEWT_COLORS='root=white,black;window=white,black;border=brightcyan,black;title=brightcyan,black;button=black,brightcyan;actbutton=black,brightgreen;compactbutton=white,black;checkbox=brightcyan,black;actcheckbox=black,brightcyan;entry=white,blue;label=white,black;listbox=white,black;actlistbox=black,brightcyan;textbox=white,black;acttextbox=black,brightcyan;helpline=brightcyan,black;roottext=white,black;emptyscale=white,black;fullscale=brightcyan,black;shadow=black,black'
+BACKTITLE="Condtux 0.11 Live | First setup / Configuracion inicial"
+
+LANG_CHOICE="$(whiptail --nocancel --backtitle "$BACKTITLE" \
+    --title "Language / Idioma" \
     --menu "Choose the system language.\nElige el idioma del sistema." 15 72 2 \
     en "English" \
     es "Español" \
@@ -23,19 +27,22 @@ case "$LANG_CHOICE" in
     es)
         SYSTEM_LOCALE="es_CL.UTF-8"
         SYSTEM_LANGUAGE="es_CL:es"
+        KEYBOARD_PROMPT="Selecciona la distribucion del teclado."
         ;;
     *)
         LANG_CHOICE="en"
         SYSTEM_LOCALE="en_US.UTF-8"
         SYSTEM_LANGUAGE="en_US:en"
+        KEYBOARD_PROMPT="Choose the keyboard layout."
         ;;
 esac
 
-KEYBOARD_CHOICE="$(whiptail --nocancel --title "Condtux - Keyboard / Teclado" \
-    --menu "Choose the keyboard layout.\nElige la distribución del teclado." 17 76 3 \
+KEYBOARD_CHOICE="$(whiptail --nocancel --backtitle "$BACKTITLE" \
+    --title "Keyboard / Teclado" \
+    --menu "$KEYBOARD_PROMPT" 17 76 3 \
     latam "Latin American / Latinoamericano" \
     es "Spanish (Spain) / Español (España)" \
-    us "English (US) / Inglés (EE. UU.)" \
+    us "English (US) / Ingles (EE. UU.)" \
     3>&1 1>&2 2>&3)"
 
 case "$KEYBOARD_CHOICE" in
@@ -86,8 +93,8 @@ EOF
 
 if [ "$MODE" != "--live" ]; then
     if [ "$LANG_CHOICE" = "es" ]; then
-        whiptail --title "Condtux" --msgbox "Idioma y teclado actualizados. Cierra la sesión o reinicia para aplicar todos los cambios." 11 72
+        whiptail --backtitle "$BACKTITLE" --title "Condtux" --msgbox "Idioma y teclado actualizados. Cierra la sesion o reinicia para aplicar todos los cambios." 11 72
     else
-        whiptail --title "Condtux" --msgbox "Language and keyboard updated. Log out or reboot to apply every change." 11 72
+        whiptail --backtitle "$BACKTITLE" --title "Condtux" --msgbox "Language and keyboard updated. Log out or reboot to apply every change." 11 72
     fi
 fi

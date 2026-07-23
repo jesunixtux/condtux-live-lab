@@ -1,0 +1,188 @@
+#!/bin/sh
+set -eu
+
+INSTALLER_ES=/usr/local/sbin/condtux-install
+INSTALLER_EN=/usr/local/sbin/condtux-install-en
+XFCE_PREFIX=/opt/xfce-4.20
+
+echo "[ Condtux ] Reparando sesion XFCE y creacion de cuentas..."
+
+chmod 0755 \
+    /usr/local/bin/condtux-startxfce4 \
+    /usr/local/sbin/condtux-time-sync \
+    /usr/local/sbin/condtux-copy-system-target
+chmod 0644 \
+    /etc/profile.d/condtux-xfce.sh \
+    /etc/X11/Xsession.d/55condtux-xfce-environment \
+    /etc/ld.so.conf.d/condtux-xfce.conf \
+    /usr/share/xsessions/condtux-xfce.desktop
+
+# 0.11 habia creado un canal xfce4-session incompleto. Ese archivo ocultaba
+# los valores de sesion segura entregados por el XFCE compilado en /opt y
+# producia "No se puede cargar la sesion a prueba de fallos".
+SESSION_OVERRIDE=/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml
+if [ -f "$SESSION_OVERRIDE" ] && \
+   grep -q 'SaveOnExit' "$SESSION_OVERRIDE" && \
+   ! grep -q 'Failsafe' "$SESSION_OVERRIDE"; then
+    rm -f "$SESSION_OVERRIDE"
+fi
+
+# Asegura que el bus de sesion pueda activar xfconfd aunque D-Bus no haya
+# heredado XDG_DATA_DIRS todavía.
+mkdir -p /usr/share/dbus-1/services
+if [ -d "$XFCE_PREFIX/share/dbus-1/services" ]; then
+    for service in "$XFCE_PREFIX"/share/dbus-1/services/*.service; do
+        [ -f "$service" ] || continue
+        ln -sfn "$service" "/usr/share/dbus-1/services/$(basename "$service")"
+    done
+fi
+
+if command -v glib-compile-schemas >/dev/null 2>&1 && \
+   [ -d "$XFCE_PREFIX/share/glib-2.0/schemas" ]; then
+    glib-compile-schemas "$XFCE_PREFIX/share/glib-2.0/schemas" || true
+fi
+ldconfig
+
+# Validacion de build: una ISO que no tenga estos tres componentes no debe
+# publicarse como XFCE funcional.
+. /etc/profile.d/condtux-xfce.sh
+command -v startxfce4 >/dev/null 2>&1 || {
+    echo "[ Condtux ] ERROR: falta startxfce4." >&2
+    exit 1
+}
+command -v xfce4-session >/dev/null 2>&1 || {
+    echo "[ Condtux ] ERROR: falta xfce4-session." >&2
+    exit 1
+}
+if ! command -v xfconfd >/dev/null 2>&1 && \
+   ! find "$XFCE_PREFIX" -type f -name xfconfd -perm /111 -print -quit 2>/dev/null | grep -q .; then
+    echo "[ Condtux ] ERROR: falta xfconfd en el paquete XFCE." >&2
+    exit 1
+fi
+
+cat > /tmp/condtux-account-override <<'ACCOUNT'
+# CONDTUX_ACCOUNT_OVERRIDE_V2
+configure_accounts() {
+  local status group extra_groups=""
+
+  case "$USER_PASSWORD_HASH" in
+    '$6$'*) ;;
+    *)
+      echo "[ Condtux ] ERROR: el hash de la contrasena del usuario es invalido." >&2
+      exit 1
+      ;;
+  esac
+
+  if [ "$INSTALL_USERNAME" != "condtux" ] && id condtux >/dev/null 2>&1; then
+    userdel -r condtux >/dev/null 2>&1 || true
+  fi
+
+  rm -f /etc/sudoers.d/condtux-live /etc/sudoers.d/condtux
+  rm -rf /etc/systemd/system/getty@tty1.service.d
+
+  if ! id "$INSTALL_USERNAME" >/dev/null 2>&1; then
+    useradd --create-home --shell /bin/bash --comment "$INSTALL_FULLNAME" "$INSTALL_USERNAME"
+  else
+    usermod --shell /bin/bash --comment "$INSTALL_FULLNAME" "$INSTALL_USERNAME"
+  fi
+
+  install -d -m 0750 -o "$INSTALL_USERNAME" -g "$INSTALL_USERNAME" "/home/$INSTALL_USERNAME"
+  usermod --password "$USER_PASSWORD_HASH" "$INSTALL_USERNAME"
+  passwd -u "$INSTALL_USERNAME" >/dev/null 2>&1 || true
+
+  status="$(passwd -S "$INSTALL_USERNAME" 2>/dev/null | awk '{print $2}')"
+  if [ "$status" != "P" ]; then
+    echo "[ Condtux ] ERROR: la cuenta $INSTALL_USERNAME no quedo con una contrasena utilizable." >&2
+    exit 1
+  fi
+
+  for group in audio video plugdev netdev; do
+    if getent group "$group" >/dev/null 2>&1; then
+      extra_groups="${extra_groups}${extra_groups:+,}$group"
+    fi
+  done
+  [ -z "$extra_groups" ] || usermod -aG "$extra_groups" "$INSTALL_USERNAME"
+
+  if [ "$ACCOUNT_MODE" = "root" ]; then
+    case "$ROOT_PASSWORD_HASH" in
+      '$6$'*) ;;
+      *)
+        echo "[ Condtux ] ERROR: el hash de la contrasena root es invalido." >&2
+        exit 1
+        ;;
+    esac
+
+    gpasswd -d "$INSTALL_USERNAME" sudo >/dev/null 2>&1 || true
+    usermod --password "$ROOT_PASSWORD_HASH" root
+    passwd -u root >/dev/null 2>&1 || true
+  else
+    usermod -aG sudo "$INSTALL_USERNAME"
+    passwd -l root >/dev/null 2>&1 || true
+  fi
+
+  chown -R "$INSTALL_USERNAME:$INSTALL_USERNAME" "/home/$INSTALL_USERNAME"
+  echo "[ Condtux ] Cuenta $INSTALL_USERNAME creada y verificada correctamente."
+}
+
+# Registra servicios y datos de XFCE compilado para el sistema instalado.
+if [ -d /opt/xfce-4.20/share/dbus-1/services ]; then
+  mkdir -p /usr/share/dbus-1/services
+  for service in /opt/xfce-4.20/share/dbus-1/services/*.service; do
+    [ -f "$service" ] || continue
+    ln -sfn "$service" "/usr/share/dbus-1/services/$(basename "$service")"
+  done
+fi
+ldconfig
+
+configure_accounts
+ACCOUNT
+
+patch_installer() {
+    file="$1"
+    language="$2"
+
+    [ -f "$file" ] || return 0
+
+    if ! grep -q 'dbus-user-session \\' "$file"; then
+        sed -i '/^[[:space:]]*dbus-x11 \\/a\    dbus-user-session \\' "$file"
+    fi
+
+    sed -i \
+        -e 's#Exec=startxfce4#Exec=/usr/local/bin/condtux-startxfce4#g' \
+        -e 's#TryExec=startxfce4#TryExec=/usr/local/bin/condtux-startxfce4#g' \
+        "$file"
+
+    if ! grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V2' "$file"; then
+        awk '
+            $0 == "configure_accounts" && !inserted {
+                while ((getline line < "/tmp/condtux-account-override") > 0) print line
+                close("/tmp/condtux-account-override")
+                inserted = 1
+                next
+            }
+            { print }
+        ' "$file" > "$file.tmp"
+        mv "$file.tmp" "$file"
+    fi
+
+    if [ "$language" = "es" ]; then
+        sed -i \
+          -e 's/passwordbox "Password para $label"/passwordbox "Contrasena para $label\\n\\nLa escritura esta oculta por seguridad; no apareceran puntos ni asteriscos."/' \
+          -e 's/passwordbox "Repite el password para $label"/passwordbox "Repite la contrasena para $label\\n\\nLa escritura esta oculta por seguridad."/' \
+          "$file"
+    else
+        sed -i \
+          -e 's/passwordbox "Password para $label"/passwordbox "Password for $label\\n\\nTyping is hidden for security; no dots or asterisks will appear."/' \
+          -e 's/passwordbox "Repite el password para $label"/passwordbox "Repeat the password for $label\\n\\nTyping is hidden for security."/' \
+          "$file"
+    fi
+
+    chmod 0755 "$file"
+}
+
+patch_installer "$INSTALLER_ES" es
+patch_installer "$INSTALLER_EN" en
+
+rm -f /tmp/condtux-account-override
+
+echo "[ Condtux ] Sesion XFCE y cuentas reparadas."

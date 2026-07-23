@@ -4,6 +4,8 @@ set -eu
 INSTALLER_ES=/usr/local/sbin/condtux-install
 INSTALLER_EN=/usr/local/sbin/condtux-install-en
 XFCE_PREFIX=/opt/xfce-4.20
+CONDTUX_XFCE_PACKAGE=condtux-xfce-desktop
+DBUS_SERVICE=/usr/share/dbus-1/services/org.xfce.Xfconf.service
 
 echo "[ Condtux ] Reparando sesion XFCE y creacion de cuentas..."
 
@@ -27,8 +29,7 @@ if [ -f "$SESSION_OVERRIDE" ] && \
     rm -f "$SESSION_OVERRIDE"
 fi
 
-# Asegura que el bus de sesion pueda activar xfconfd aunque D-Bus no haya
-# heredado XDG_DATA_DIRS todavía.
+# Asegura que el bus de sesion pueda activar componentes del XFCE compilado.
 mkdir -p /usr/share/dbus-1/services
 if [ -d "$XFCE_PREFIX/share/dbus-1/services" ]; then
     for service in "$XFCE_PREFIX"/share/dbus-1/services/*.service; do
@@ -43,8 +44,6 @@ if command -v glib-compile-schemas >/dev/null 2>&1 && \
 fi
 ldconfig
 
-# Validacion de build: una ISO que no tenga estos tres componentes no debe
-# publicarse como XFCE funcional.
 . /etc/profile.d/condtux-xfce.sh
 command -v startxfce4 >/dev/null 2>&1 || {
     echo "[ Condtux ] ERROR: falta startxfce4." >&2
@@ -54,10 +53,27 @@ command -v xfce4-session >/dev/null 2>&1 || {
     echo "[ Condtux ] ERROR: falta xfce4-session." >&2
     exit 1
 }
-if ! command -v xfconfd >/dev/null 2>&1 && \
-   ! find "$XFCE_PREFIX" -type f -name xfconfd -perm /111 -print -quit 2>/dev/null | grep -q .; then
-    echo "[ Condtux ] ERROR: falta xfconfd en el paquete XFCE." >&2
+
+XFCONFD_PATH="$(command -v xfconfd 2>/dev/null || true)"
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    XFCONFD_PATH="$(dpkg -L "$CONDTUX_XFCE_PACKAGE" 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+fi
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    XFCONFD_PATH="$(find /usr/lib /usr/libexec "$XFCE_PREFIX" \
+        -type f -name xfconfd -perm /111 -print -quit 2>/dev/null || true)"
+fi
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: $CONDTUX_XFCE_PACKAGE no incluye xfconfd." >&2
     exit 1
+fi
+
+ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
+if [ ! -f "$DBUS_SERVICE" ]; then
+    cat > "$DBUS_SERVICE" <<EOF
+[D-BUS Service]
+Name=org.xfce.Xfconf
+Exec=$XFCONFD_PATH
+EOF
 fi
 
 cat > /tmp/condtux-account-override <<'ACCOUNT'
@@ -124,13 +140,35 @@ configure_accounts() {
   echo "[ Condtux ] Cuenta $INSTALL_USERNAME creada y verificada correctamente."
 }
 
-# Registra servicios y datos de XFCE compilado para el sistema instalado.
-if [ -d /opt/xfce-4.20/share/dbus-1/services ]; then
+# Registra el runtime de configuracion incluido en el paquete monolitico.
+if [ "$INSTALL_PROFILE" = "xfce" ]; then
+  if [ -d /opt/xfce-4.20/share/dbus-1/services ]; then
+    mkdir -p /usr/share/dbus-1/services
+    for service in /opt/xfce-4.20/share/dbus-1/services/*.service; do
+      [ -f "$service" ] || continue
+      ln -sfn "$service" "/usr/share/dbus-1/services/$(basename "$service")"
+    done
+  fi
+
+  XFCONFD_PATH="$(dpkg -L "$CONDTUX_XFCE_PACKAGE" 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+  if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    XFCONFD_PATH="$(find /usr/lib /usr/libexec /opt/xfce-4.20 \
+      -type f -name xfconfd -perm /111 -print -quit 2>/dev/null || true)"
+  fi
+  if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: el sistema instalado no contiene xfconfd." >&2
+    exit 1
+  fi
+
+  ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
   mkdir -p /usr/share/dbus-1/services
-  for service in /opt/xfce-4.20/share/dbus-1/services/*.service; do
-    [ -f "$service" ] || continue
-    ln -sfn "$service" "/usr/share/dbus-1/services/$(basename "$service")"
-  done
+  if [ ! -f /usr/share/dbus-1/services/org.xfce.Xfconf.service ]; then
+    cat > /usr/share/dbus-1/services/org.xfce.Xfconf.service <<XFCONF_SERVICE
+[D-BUS Service]
+Name=org.xfce.Xfconf
+Exec=$XFCONFD_PATH
+XFCONF_SERVICE
+  fi
 fi
 ldconfig
 
@@ -147,7 +185,9 @@ patch_installer() {
         sed -i '/^[[:space:]]*dbus-x11 \\/a\    dbus-user-session \\' "$file"
     fi
 
+    # Nunca mezclar el paquete Debian xfconf con condtux-xfce-desktop.
     sed -i \
+        -e '/^[[:space:]]*xfconf \\$/d' \
         -e 's#Exec=startxfce4#Exec=/usr/local/bin/condtux-startxfce4#g' \
         -e 's#TryExec=startxfce4#TryExec=/usr/local/bin/condtux-startxfce4#g' \
         "$file"

@@ -1,0 +1,14 @@
+[Unit]
+Description=Condtux automatic clock synchronization
+Wants=network-online.target
+After=NetworkManager.service network-online.target systemd-timesyncd.service
+Before=apt-daily.service apt-daily-upgrade.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/condtux-time-sync --best-effort
+TimeoutStartSec=75
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

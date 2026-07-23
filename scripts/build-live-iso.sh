@@ -13,6 +13,7 @@ VERSION_COMPACT="$(printf '%s' "$VERSION" | tr -d '.')"
 PROJECT_NAME="Condtux Live ${VERSION}"
 ISO_NAME="condtux-${VERSION}-amd64.iso"
 ISO_OUTPUT="output/${ISO_NAME}"
+BOOT_PARAMETERS="boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=en_US.UTF-8 keyboard-layouts=us timezone=America/Santiago quiet loglevel=3 systemd.show_status=false rd.systemd.show_status=false vt.global_cursor_default=0"
 
 case "$VERSION" in
     ''|*[!0-9.]*|.*|*.)
@@ -62,7 +63,7 @@ lb config \
   --mirror-binary-security https://security.debian.org/debian-security \
   --debootstrap-options "--include=ca-certificates" \
   --apt-recommends false \
-  --bootappend-live "boot=live components live-config.username=condtux live-config.user-fullname=Condtux hostname=condtux locales=en_US.UTF-8 keyboard-layouts=us timezone=America/Santiago"
+  --bootappend-live "$BOOT_PARAMETERS"
 
 echo "[ ${PROJECT_NAME} ] Ajustando configuracion final..."
 if [ -f config/bootstrap ]; then
@@ -76,6 +77,7 @@ if [ -f config/binary ]; then
   sed -i 's#^LB_BOOTAPPEND_INSTALL=.*#LB_BOOTAPPEND_INSTALL=""#' config/binary
   sed -i 's#^LB_UEFI_SECURE_BOOT=.*#LB_UEFI_SECURE_BOOT="enable"#' config/binary
   sed -i 's#^LB_COMPRESSION=.*#LB_COMPRESSION="xz"#' config/binary
+  sed -i "s#^LB_BOOTAPPEND_LIVE=.*#LB_BOOTAPPEND_LIVE=\"${BOOT_PARAMETERS}\"#" config/binary
 fi
 
 echo "[ ${PROJECT_NAME} ] Areas APT activas:"

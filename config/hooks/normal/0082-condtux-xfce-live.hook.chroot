@@ -35,6 +35,7 @@ apt-get install -y --no-install-recommends \
     pkexec \
     dbus-x11 \
     dbus-user-session \
+    xfconf \
     pipewire-audio \
     fonts-dejavu-core \
     hicolor-icon-theme

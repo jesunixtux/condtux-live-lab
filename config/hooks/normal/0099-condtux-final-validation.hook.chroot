@@ -14,6 +14,7 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
       -e 's#trixie-security main$#trixie-security main non-free-firmware#g' \
       -e '/^[[:space:]]*systemctl enable ssh[[:space:]]*$/d' \
       -e '/^[[:space:]]*condtux-xfce-desktop \\$/d' \
+      -e '/^[[:space:]]*policykit-1-gnome \\$/d' \
       "$installer"
 
     bash -n "$installer"
@@ -36,15 +37,19 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     grep -q 'apt install -y --no-install-recommends' "$installer"
     grep -q '^[[:space:]]*xfce4 \\' "$installer"
     grep -q 'dpkg -L xfconf' "$installer"
+    grep -q 'mate-polkit' "$installer"
+    grep -q 'condtux-polkit-agent.desktop' "$installer"
 
     if grep -q 'apt-cache show "$CONDTUX_XFCE_PACKAGE"' "$installer"; then
         echo "[ Condtux ] ERROR: el instalador aun depende del XFCE monolitico." >&2
         exit 1
     fi
+    if grep -q 'policykit-1-gnome' "$installer"; then
+        echo "[ Condtux ] ERROR: el instalador aun referencia policykit-1-gnome." >&2
+        exit 1
+    fi
 
-    # bash -n del instalador no analiza el contenido de su heredoc CHROOT. Lo
-    # extraemos y comprobamos por separado para detectar errores antes de grabar
-    # la ISO.
+    # bash -n no analiza el contenido del heredoc CHROOT del instalador.
     chroot_test="/tmp/$(basename "$installer").chroot-test.sh"
     awk '
         /cat > "\$TARGET\/tmp\/condtux-chroot-setup\.sh" <<'"'"'CHROOT'"'"'/ {
@@ -63,6 +68,7 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     grep -q '^install_xfce_desktop() {' "$chroot_test"
     grep -q '^configure_accounts() {' "$chroot_test"
     grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$chroot_test"
+    grep -q 'mate-polkit' "$chroot_test"
     rm -f "$chroot_test"
 done
 
@@ -74,14 +80,14 @@ for script in \
     sh -n "$script"
 done
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit zstd; do
     if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
         echo "[ Condtux ] ERROR: paquete requerido incompleto: $package" >&2
         exit 1
     fi
 done
 
-for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm; do
+for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm zstd; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "[ Condtux ] ERROR: comando requerido ausente: $command_name" >&2
         exit 1
@@ -104,7 +110,20 @@ if [ ! -f "$DBUS_SERVICE" ] || ! grep -q '^Name=org\.xfce\.Xfconf$' "$DBUS_SERVI
     exit 1
 fi
 
-for binary in "$(command -v xfce4-session)" "$XFCONFD_PATH" "$(command -v xfwm4)"; do
+POLKIT_AGENT=/usr/libexec/polkit-mate-authentication-agent-1
+POLKIT_AUTOSTART=/etc/xdg/autostart/condtux-polkit-agent.desktop
+if [ ! -x "$POLKIT_AGENT" ]; then
+    echo "[ Condtux ] ERROR: falta el agente Polkit GTK." >&2
+    exit 1
+fi
+if [ ! -f "$POLKIT_AUTOSTART" ] || \
+   ! grep -q '^OnlyShowIn=XFCE;$' "$POLKIT_AUTOSTART" || \
+   ! grep -q "^Exec=$POLKIT_AGENT$" "$POLKIT_AUTOSTART"; then
+    echo "[ Condtux ] ERROR: autostart Polkit de XFCE ausente o invalido." >&2
+    exit 1
+fi
+
+for binary in "$(command -v xfce4-session)" "$XFCONFD_PATH" "$(command -v xfwm4)" "$POLKIT_AGENT"; do
     if ldd "$binary" 2>/dev/null | grep -q 'not found'; then
         echo "[ Condtux ] ERROR: bibliotecas sin resolver en $binary" >&2
         ldd "$binary" >&2 || true
@@ -118,10 +137,12 @@ if dpkg --audit | grep -q .; then
     exit 1
 fi
 
-if dpkg-query -W -f='${Status}' condtux-xfce-desktop 2>/dev/null | grep -q 'install ok installed'; then
-    echo "[ Condtux ] ERROR: la ISO contiene el paquete XFCE monolitico antiguo." >&2
-    exit 1
-fi
+for forbidden in condtux-xfce-desktop policykit-1-gnome openssh-server apt-listchanges; do
+    if dpkg-query -W -f='${Status}' "$forbidden" 2>/dev/null | grep -q 'install ok installed'; then
+        echo "[ Condtux ] ERROR: paquete prohibido presente en la ISO: $forbidden" >&2
+        exit 1
+    fi
+done
 
 for legacy in \
     /etc/profile.d/condtux-xfce.sh \
@@ -140,4 +161,4 @@ if [ -f /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml ] && \
     exit 1
 fi
 
-echo "[ Condtux 0.11 ] ISO validada: XFCE, instalador, cuentas, hora, seguridad y dpkg correctos."
+echo "[ Condtux 0.11 ] ISO validada: XFCE, Polkit, kernel, cuentas, seguridad y dpkg correctos."

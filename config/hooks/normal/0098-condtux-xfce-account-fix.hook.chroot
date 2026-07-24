@@ -3,6 +3,8 @@ set -eu
 
 INSTALLER_ES=/usr/local/sbin/condtux-install
 INSTALLER_EN=/usr/local/sbin/condtux-install-en
+POLKIT_AGENT=/usr/libexec/polkit-mate-authentication-agent-1
+POLKIT_AUTOSTART=/etc/xdg/autostart/condtux-polkit-agent.desktop
 
 echo "[ Condtux ] Consolidando sesion XFCE e instalador..."
 
@@ -19,7 +21,7 @@ if [ -f "$SESSION_OVERRIDE" ] && \
     rm -f "$SESSION_OVERRIDE"
 fi
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit; do
     dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || {
         echo "[ Condtux ] ERROR: falta el paquete $package." >&2
         exit 1
@@ -40,9 +42,16 @@ if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
 fi
 ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
 
+if [ ! -x "$POLKIT_AGENT" ] || [ ! -f "$POLKIT_AUTOSTART" ]; then
+    echo "[ Condtux ] ERROR: el agente Polkit de Condtux no quedo instalado." >&2
+    exit 1
+fi
+
 cat > /tmp/condtux-install-xfce-function <<'XFCE_FUNCTION'
 install_xfce_desktop() {
   local xfconfd_path package command_name
+  local polkit_agent=/usr/libexec/polkit-mate-authentication-agent-1
+  local polkit_autostart=/etc/xdg/autostart/condtux-polkit-agent.desktop
 
   echo "[ Condtux ] Instalando escritorio XFCE estable..."
 
@@ -67,7 +76,7 @@ install_xfce_desktop() {
     lightdm-gtk-greeter \
     xterm \
     network-manager-gnome \
-    policykit-1-gnome \
+    mate-polkit \
     polkitd \
     pkexec \
     dbus-x11 \
@@ -76,7 +85,7 @@ install_xfce_desktop() {
     fonts-dejavu-core \
     hicolor-icon-theme
 
-  for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
+  for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit; do
     if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
       echo "[ Condtux ] ERROR: no se instalo correctamente $package." >&2
       exit 1
@@ -97,6 +106,25 @@ install_xfce_desktop() {
   fi
   install -d -m 0755 /usr/local/bin
   ln -sfn "$xfconfd_path" /usr/local/bin/xfconfd
+
+  if [ ! -x "$polkit_agent" ]; then
+    echo "[ Condtux ] ERROR: mate-polkit no contiene su agente ejecutable." >&2
+    exit 1
+  fi
+  install -d -m 0755 /etc/xdg/autostart
+  cat > "$polkit_autostart" <<POLKIT
+[Desktop Entry]
+Type=Application
+Name=Condtux PolicyKit Agent
+Comment=Authentication agent for administrative actions
+Exec=$polkit_agent
+TryExec=$polkit_agent
+Terminal=false
+NoDisplay=true
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true
+POLKIT
+  chmod 0644 "$polkit_autostart"
 
   if [ ! -x /usr/local/bin/condtux-startxfce4 ]; then
     cat > /usr/local/bin/condtux-startxfce4 <<'STARTXFCE'
@@ -221,7 +249,6 @@ patch_installer() {
     ' "$file" > "$file.tmp"
     mv "$file.tmp" "$file"
 
-    # Sustituye la funcion de cuentas original; no agrega una segunda definicion.
     awk '
         /^configure_accounts\(\) \{/ {
             while ((getline line < "/tmp/condtux-account-function") > 0) print line
@@ -252,6 +279,7 @@ patch_installer() {
 
     sed -i \
       -e '/^[[:space:]]*condtux-xfce-desktop \\$/d' \
+      -e '/^[[:space:]]*policykit-1-gnome \\$/d' \
       -e 's/El perfil XFCE tambien necesita el repo Condtux por HTTPS.//g' \
       "$file"
 
@@ -276,6 +304,7 @@ patch_installer() {
         exit 1
     fi
     grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$file"
+    grep -q 'mate-polkit' "$file"
 
     chmod 0755 "$file"
     bash -n "$file"
@@ -286,4 +315,4 @@ patch_installer "$INSTALLER_EN" en
 
 rm -f /tmp/condtux-install-xfce-function /tmp/condtux-account-function
 
-echo "[ Condtux ] XFCE e instalador consolidados correctamente."
+echo "[ Condtux ] XFCE, Polkit e instalador consolidados correctamente."

@@ -44,25 +44,46 @@ sh scripts/apply-version.sh
 
 chmod +x config/hooks/normal/*.hook.chroot config/hooks/normal/*.hook.binary 2>/dev/null || true
 
-# Fallar antes de iniciar live-build si un hook tiene sintaxis invalida o si el
-# antiguo paquete XFCE monolitico reaparece en la receta activa.
 echo "[ ${PROJECT_NAME} ] Validando scripts antes de construir..."
-for script in scripts/*.sh config/hooks/normal/*.hook.chroot config/hooks/normal/*.hook.binary; do
-    [ -f "$script" ] || continue
-    case "$(head -n 1 "$script" 2>/dev/null || true)" in
-        *bash*) bash -n "$script" ;;
-        *) sh -n "$script" ;;
+while IFS= read -r script; do
+    first_line="$(head -n 1 "$script" 2>/dev/null || true)"
+    case "$first_line" in
+        '#!'*bash*) bash -n "$script" ;;
+        '#!'*) sh -n "$script" ;;
     esac
-done
+done < <(find scripts config/hooks/normal config/includes.chroot/usr/local \
+    -type f -print 2>/dev/null | sort)
 
-if grep -RIn --include='*.hook.chroot' \
-    'apt-get.*condtux-xfce-desktop\|^[[:space:]]*"\?condtux-xfce-desktop[[:space:]]*\\' \
-    config/hooks/normal 2>/dev/null; then
-    echo "[ ${PROJECT_NAME} ] ERROR: un hook activo intenta instalar el paquete XFCE monolitico antiguo." >&2
+# El antiguo paquete monolitico no puede aparecer en una lista activa ni como
+# instalacion ejecutable de un hook. Los comentarios y herramientas de build
+# fuera de config/ no se consideran parte de la ISO.
+if grep -REn --include='*.list.chroot' \
+    '^[[:space:]]*condtux-xfce-desktop([[:space:]]|$)' \
+    config/package-lists 2>/dev/null; then
+    echo "[ ${PROJECT_NAME} ] ERROR: una lista de paquetes activa contiene condtux-xfce-desktop." >&2
     exit 1
 fi
 
-echo "[ ${PROJECT_NAME} ] Limpiando build anterior..."
+if grep -REn --include='*.hook.chroot' \
+    '^[[:space:]]*"?condtux-xfce-desktop"?[[:space:]]*\\?$|apt(-get)?[[:space:]].*install.*condtux-xfce-desktop' \
+    config/hooks/normal 2>/dev/null; then
+    echo "[ ${PROJECT_NAME} ] ERROR: un hook activo intenta instalar condtux-xfce-desktop." >&2
+    exit 1
+fi
+
+for required in \
+    config/package-lists/condtux-base.list.chroot \
+    config/hooks/normal/0082-condtux-xfce-live.hook.chroot \
+    config/hooks/normal/0098-condtux-xfce-account-fix.hook.chroot \
+    config/hooks/normal/0099-condtux-final-validation.hook.chroot \
+    config/includes.chroot/usr/local/sbin/condtux-install; do
+    if [ ! -s "$required" ]; then
+        echo "[ ${PROJECT_NAME} ] ERROR: falta archivo requerido: $required" >&2
+        exit 1
+    fi
+done
+
+echo "[ ${PROJECT_NAME} ] Limpiando build anterior por completo..."
 sudo lb clean --all || true
 sudo rm -rf \
     cache/bootstrap \
@@ -128,7 +149,6 @@ echo "[ ${PROJECT_NAME} ] Construyendo ISO..."
 sudo lb build 2>&1 | tee "$LOG_FILE"
 
 ISO_FOUND="$(find . -maxdepth 1 -type f \( -name 'live-image-amd64.hybrid.iso' -o -name 'binary.hybrid.iso' -o -name '*.iso' \) | head -n 1)"
-
 if [ -z "$ISO_FOUND" ] || [ ! -s "$ISO_FOUND" ]; then
     echo "[ ${PROJECT_NAME} ] ERROR: no se encontro una ISO valida." >&2
     exit 1
@@ -144,24 +164,27 @@ for candidate in chroot.packages.live binary/live/filesystem.packages; do
     fi
 done
 
-if [ -n "$MANIFEST" ]; then
-    for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
-        if ! grep -q "^${package}[[:space:]]" "$MANIFEST"; then
-            echo "[ ${PROJECT_NAME} ] ERROR: falta $package en el manifiesto final." >&2
-            exit 1
-        fi
-    done
+if [ -z "$MANIFEST" ]; then
+    echo "[ ${PROJECT_NAME} ] ERROR: no se encontro el manifiesto de paquetes final." >&2
+    exit 1
+fi
 
-    if grep -q '^condtux-xfce-desktop[[:space:]]' "$MANIFEST"; then
-        echo "[ ${PROJECT_NAME} ] ERROR: la ISO final todavia contiene el paquete XFCE monolitico antiguo." >&2
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
+    if ! grep -q "^${package}[[:space:]]" "$MANIFEST"; then
+        echo "[ ${PROJECT_NAME} ] ERROR: falta $package en el manifiesto final." >&2
         exit 1
     fi
+done
+
+if grep -q '^condtux-xfce-desktop[[:space:]]' "$MANIFEST"; then
+    echo "[ ${PROJECT_NAME} ] ERROR: la ISO final contiene el XFCE monolitico antiguo." >&2
+    exit 1
 fi
 
 if command -v xorriso >/dev/null 2>&1; then
-    if ! xorriso -indev "$ISO_OUTPUT" -find /EFI/BOOT/BOOTX64.EFI -print 2>/dev/null | \
+    if ! xorriso -indev "$ISO_OUTPUT" -find /EFI/BOOT/BOOTX64.EFI -type f -print 2>/dev/null | \
          grep -q '/EFI/BOOT/BOOTX64.EFI'; then
-        echo "[ ${PROJECT_NAME} ] ERROR: falta la ruta UEFI fallback EFI/BOOT/BOOTX64.EFI." >&2
+        echo "[ ${PROJECT_NAME} ] ERROR: falta EFI/BOOT/BOOTX64.EFI." >&2
         exit 1
     fi
 fi

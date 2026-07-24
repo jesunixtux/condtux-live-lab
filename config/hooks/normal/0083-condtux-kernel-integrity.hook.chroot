@@ -1,0 +1,59 @@
+#!/bin/sh
+set -eu
+
+LOG=/tmp/condtux-initramfs-check.log
+
+echo "[ Condtux ] Verificando integridad del kernel e initramfs..."
+
+if ! command -v xz >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: falta xz para validar los modulos del kernel." >&2
+    exit 1
+fi
+
+if ! command -v zstd >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: falta zstd para generar el initramfs de Debian 13." >&2
+    exit 1
+fi
+
+MODULE_COUNT="$(find /lib/modules -type f -name '*.ko.xz' | wc -l)"
+if [ "$MODULE_COUNT" -eq 0 ]; then
+    echo "[ Condtux ] ERROR: no se encontraron modulos de kernel comprimidos." >&2
+    exit 1
+fi
+
+# xz -t detecta archivos truncados o con checksum incorrecto. El log anterior
+# mostro errores de formato y fin inesperado que no deben llegar a una ISO.
+if ! find /lib/modules -type f -name '*.ko.xz' -print0 | xargs -0 -r xz -t; then
+    echo "[ Condtux ] ERROR: hay uno o mas modulos .ko.xz corruptos." >&2
+    exit 1
+fi
+
+for modules_dir in /lib/modules/*; do
+    [ -d "$modules_dir" ] || continue
+    kernel_version="$(basename "$modules_dir")"
+    if ! depmod -a "$kernel_version" >"$LOG" 2>&1; then
+        cat "$LOG" >&2
+        echo "[ Condtux ] ERROR: depmod fallo para $kernel_version." >&2
+        exit 1
+    fi
+    if grep -Eq 'ERROR:|File is corrupt|File format not recognized|Unexpected end of input' "$LOG"; then
+        cat "$LOG" >&2
+        echo "[ Condtux ] ERROR: depmod detecto modulos danados para $kernel_version." >&2
+        exit 1
+    fi
+done
+
+: > "$LOG"
+if ! update-initramfs -u -k all >"$LOG" 2>&1; then
+    cat "$LOG" >&2
+    echo "[ Condtux ] ERROR: no se pudo regenerar el initramfs." >&2
+    exit 1
+fi
+if grep -Eq 'depmod: ERROR|File is corrupt|File format not recognized|Unexpected end of input' "$LOG"; then
+    cat "$LOG" >&2
+    echo "[ Condtux ] ERROR: el initramfs se genero con errores de modulos." >&2
+    exit 1
+fi
+
+rm -f "$LOG"
+echo "[ Condtux ] Kernel e initramfs verificados correctamente ($MODULE_COUNT modulos)."

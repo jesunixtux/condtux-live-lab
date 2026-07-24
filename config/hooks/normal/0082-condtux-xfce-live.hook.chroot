@@ -1,24 +1,24 @@
 #!/bin/sh
 set -eu
 
-CONDTUX_XFCE_PACKAGE="condtux-xfce-desktop"
+export DEBIAN_FRONTEND=noninteractive
+export APT_LISTCHANGES_FRONTEND=none
 
-echo "[ Condtux ] Instalando XFCE Live optimizado..."
-apt-get update
+APT_OPTIONS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
 
-if ! apt-cache show "$CONDTUX_XFCE_PACKAGE" >/dev/null 2>&1; then
-    echo "[ Condtux ] ERROR: falta $CONDTUX_XFCE_PACKAGE en https://repo-condtux.jeval.cl/apt" >&2
-    exit 1
-fi
+echo "[ Condtux ] Instalando XFCE 4.20 estable desde Debian trixie..."
 
-# El paquete Condtux es monolitico y ya contiene xfconf, libxfce4util y el
-# resto del escritorio. No se deben mezclar paquetes XFCE equivalentes de
-# Debian porque ambos poseen los mismos archivos bajo /usr.
-#
-# Xorg se instala de forma explicita para conservar soporte de hardware real
-# sin arrastrar las aplicaciones y documentacion del metapaquete xorg.
-apt-get install -y --no-install-recommends \
-    "$CONDTUX_XFCE_PACKAGE" \
+# La version monolitica condtux-xfce-desktop 0.8.0 duplicaba archivos de
+# xfconf/libxfce4util y hacia que dpkg abortara al resolver dependencias. La ISO
+# 0.11 usa los paquetes XFCE mantenidos por Debian. La personalizacion Condtux
+# permanece separada y el repo propio sigue disponible para aplicaciones y
+# actualizaciones de la distro.
+apt-get $APT_OPTIONS update
+apt-get $APT_OPTIONS install -y --no-install-recommends \
+    xfce4 \
+    xfce4-power-manager \
+    xfce4-notifyd \
+    thunar-volman \
     xserver-xorg-core \
     xserver-xorg-input-libinput \
     xserver-xorg-video-amdgpu \
@@ -35,6 +35,7 @@ apt-get install -y --no-install-recommends \
     lightdm-gtk-greeter \
     xterm \
     network-manager-gnome \
+    policykit-1-gnome \
     polkitd \
     pkexec \
     dbus-x11 \
@@ -43,16 +44,42 @@ apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     hicolor-icon-theme
 
-if ! command -v startxfce4 >/dev/null 2>&1; then
-    echo "[ Condtux ] ERROR: $CONDTUX_XFCE_PACKAGE no instalo startxfce4." >&2
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4; do
+    if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+        echo "[ Condtux ] ERROR: no se instalo correctamente $package." >&2
+        exit 1
+    fi
+done
+
+for command_name in startxfce4 xfce4-session xfconfd xfconf-query xfwm4 xfdesktop; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "[ Condtux ] ERROR: falta el comando XFCE requerido: $command_name" >&2
+        exit 1
+    fi
+done
+
+# Comprueba ahora, dentro del chroot, que los ejecutables principales no tengan
+# bibliotecas sin resolver. Es mejor abortar la build que publicar una ISO cuya
+# sesion grafica falla al iniciar.
+for binary in "$(command -v xfce4-session)" "$(command -v xfconfd)" "$(command -v xfwm4)"; do
+    if ldd "$binary" 2>/dev/null | grep -q 'not found'; then
+        echo "[ Condtux ] ERROR: bibliotecas sin resolver en $binary" >&2
+        ldd "$binary" >&2 || true
+        exit 1
+    fi
+done
+
+if dpkg --audit | grep -q .; then
+    echo "[ Condtux ] ERROR: dpkg detecto paquetes incompletos:" >&2
+    dpkg --audit >&2
     exit 1
 fi
 
-# El Live entra primero en consola para ejecutar idioma/teclado y luego permite
-# iniciar XFCE; no levantamos servicios graficos antes de tiempo.
+# El Live entra primero en consola para seleccionar idioma y teclado. XFCE se
+# activa despues con condtux-live-xfce.
 systemctl set-default multi-user.target || true
 systemctl disable lightdm || true
 systemctl disable ssh.service ssh.socket 2>/dev/null || true
 systemctl disable bluetooth.service cups.service 2>/dev/null || true
 
-echo "[ Condtux ] XFCE Live optimizado y listo."
+echo "[ Condtux ] XFCE estable instalado y validado correctamente."

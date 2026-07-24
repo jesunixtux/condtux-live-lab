@@ -54,26 +54,34 @@ while IFS= read -r script; do
 done < <(find scripts config/hooks/normal config/includes.chroot/usr/local \
     -type f -print 2>/dev/null | sort)
 
-# El antiguo paquete monolitico no puede aparecer en una lista activa ni como
-# instalacion ejecutable de un hook. Los comentarios y herramientas de build
-# fuera de config/ no se consideran parte de la ISO.
+# El antiguo XFCE monolitico y paquetes retirados de trixie no pueden volver a
+# entrar como dependencias activas.
 if grep -REn --include='*.list.chroot' \
     '^[[:space:]]*condtux-xfce-desktop([[:space:]]|$)' \
     config/package-lists 2>/dev/null; then
-    echo "[ ${PROJECT_NAME} ] ERROR: una lista de paquetes activa contiene condtux-xfce-desktop." >&2
+    echo "[ ${PROJECT_NAME} ] ERROR: una lista activa contiene condtux-xfce-desktop." >&2
     exit 1
 fi
 
 if grep -REn --include='*.hook.chroot' \
     '^[[:space:]]*"?condtux-xfce-desktop"?[[:space:]]*\\?$|apt(-get)?[[:space:]].*install.*condtux-xfce-desktop' \
     config/hooks/normal 2>/dev/null; then
-    echo "[ ${PROJECT_NAME} ] ERROR: un hook activo intenta instalar condtux-xfce-desktop." >&2
+    echo "[ ${PROJECT_NAME} ] ERROR: un hook intenta instalar condtux-xfce-desktop." >&2
+    exit 1
+fi
+
+if grep -REn --include='*.list.chroot' --include='*.hook.chroot' \
+    '^[[:space:]]*policykit-1-gnome[[:space:]]*\\?$' \
+    config/package-lists config/hooks/normal 2>/dev/null; then
+    echo "[ ${PROJECT_NAME} ] ERROR: policykit-1-gnome no existe en Debian 13 trixie." >&2
     exit 1
 fi
 
 for required in \
     config/package-lists/condtux-base.list.chroot \
+    config/package-lists/condtux-installer.list.chroot \
     config/hooks/normal/0082-condtux-xfce-live.hook.chroot \
+    config/hooks/normal/0083-condtux-kernel-integrity.hook.chroot \
     config/hooks/normal/0098-condtux-xfce-account-fix.hook.chroot \
     config/hooks/normal/0099-condtux-final-validation.hook.chroot \
     config/includes.chroot/usr/local/sbin/condtux-install; do
@@ -123,7 +131,7 @@ lb config \
   --security true \
   --mirror-chroot-security https://security.debian.org/debian-security \
   --mirror-binary-security https://security.debian.org/debian-security \
-  --debootstrap-options "--include=ca-certificates" \
+  --debootstrap-options "--include=ca-certificates,zstd" \
   --apt-recommends false \
   --bootappend-live "$BOOT_PARAMETERS"
 
@@ -148,6 +156,13 @@ grep -E '^LB_(PARENT_)?ARCHIVE_AREAS=' config/bootstrap || true
 echo "[ ${PROJECT_NAME} ] Construyendo ISO..."
 sudo lb build 2>&1 | tee "$LOG_FILE"
 
+# Algunos comandos de initramfs pueden continuar incluso despues de imprimir un
+# error de depmod. Nunca publicar una imagen si el log contiene estas firmas.
+if grep -Eq 'depmod: ERROR|File is corrupt|File format not recognized|Unexpected end of input' "$LOG_FILE"; then
+    echo "[ ${PROJECT_NAME} ] ERROR: el log contiene errores de integridad del kernel." >&2
+    exit 1
+fi
+
 ISO_FOUND="$(find . -maxdepth 1 -type f \( -name 'live-image-amd64.hybrid.iso' -o -name 'binary.hybrid.iso' -o -name '*.iso' \) | head -n 1)"
 if [ -z "$ISO_FOUND" ] || [ ! -s "$ISO_FOUND" ]; then
     echo "[ ${PROJECT_NAME} ] ERROR: no se encontro una ISO valida." >&2
@@ -165,21 +180,23 @@ for candidate in chroot.packages.live binary/live/filesystem.packages; do
 done
 
 if [ -z "$MANIFEST" ]; then
-    echo "[ ${PROJECT_NAME} ] ERROR: no se encontro el manifiesto de paquetes final." >&2
+    echo "[ ${PROJECT_NAME} ] ERROR: no se encontro el manifiesto final." >&2
     exit 1
 fi
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit zstd; do
     if ! grep -q "^${package}[[:space:]]" "$MANIFEST"; then
         echo "[ ${PROJECT_NAME} ] ERROR: falta $package en el manifiesto final." >&2
         exit 1
     fi
 done
 
-if grep -q '^condtux-xfce-desktop[[:space:]]' "$MANIFEST"; then
-    echo "[ ${PROJECT_NAME} ] ERROR: la ISO final contiene el XFCE monolitico antiguo." >&2
-    exit 1
-fi
+for forbidden in condtux-xfce-desktop policykit-1-gnome openssh-server apt-listchanges; do
+    if grep -q "^${forbidden}[[:space:]]" "$MANIFEST"; then
+        echo "[ ${PROJECT_NAME} ] ERROR: paquete prohibido en la ISO final: $forbidden" >&2
+        exit 1
+    fi
+done
 
 if command -v xorriso >/dev/null 2>&1; then
     if ! xorriso -indev "$ISO_OUTPUT" -find /EFI/BOOT/BOOTX64.EFI -type f -print 2>/dev/null | \

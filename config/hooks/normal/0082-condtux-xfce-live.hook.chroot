@@ -6,43 +6,59 @@ export APT_LISTCHANGES_FRONTEND=none
 
 APT_OPTIONS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
 
+POLKIT_AGENT=/usr/libexec/polkit-mate-authentication-agent-1
+POLKIT_AUTOSTART=/etc/xdg/autostart/condtux-polkit-agent.desktop
+
+REQUIRED_PACKAGES="
+xfce4
+xfce4-power-manager
+xfce4-notifyd
+thunar-volman
+xserver-xorg-core
+xserver-xorg-input-libinput
+xserver-xorg-video-amdgpu
+xserver-xorg-video-ati
+xserver-xorg-video-intel
+xserver-xorg-video-nouveau
+xserver-xorg-video-vesa
+xserver-xorg-video-fbdev
+xserver-xorg-video-vmware
+xinit
+xauth
+x11-xserver-utils
+lightdm
+lightdm-gtk-greeter
+xterm
+network-manager-gnome
+mate-polkit
+polkitd
+pkexec
+dbus-x11
+dbus-user-session
+pipewire-audio
+fonts-dejavu-core
+hicolor-icon-theme
+"
+
 echo "[ Condtux ] Instalando XFCE 4.20 estable desde Debian trixie..."
 
-# Condtux 0.11 usa una sola implementacion de XFCE. El paquete monolitico
-# condtux-xfce-desktop 0.8.0 queda fuera de la ISO porque duplicaba archivos de
-# xfconf y libxfce4util con los paquetes de Debian.
+# Condtux 0.11 usa una sola implementacion de XFCE: los paquetes mantenidos por
+# Debian Stable. El antiguo paquete monolitico duplicaba xfconf/libxfce4util.
 apt-get $APT_OPTIONS update
-apt-get $APT_OPTIONS install -y --no-install-recommends \
-    xfce4 \
-    xfce4-power-manager \
-    xfce4-notifyd \
-    thunar-volman \
-    xserver-xorg-core \
-    xserver-xorg-input-libinput \
-    xserver-xorg-video-amdgpu \
-    xserver-xorg-video-ati \
-    xserver-xorg-video-intel \
-    xserver-xorg-video-nouveau \
-    xserver-xorg-video-vesa \
-    xserver-xorg-video-fbdev \
-    xserver-xorg-video-vmware \
-    xinit \
-    xauth \
-    x11-xserver-utils \
-    lightdm \
-    lightdm-gtk-greeter \
-    xterm \
-    network-manager-gnome \
-    policykit-1-gnome \
-    polkitd \
-    pkexec \
-    dbus-x11 \
-    dbus-user-session \
-    pipewire-audio \
-    fonts-dejavu-core \
-    hicolor-icon-theme
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
+# Validar candidatos antes de pedir la transaccion completa evita perder tiempo
+# con nombres eliminados de Debian, como policykit-1-gnome en trixie.
+for package in $REQUIRED_PACKAGES; do
+    if ! apt-cache show "$package" >/dev/null 2>&1; then
+        echo "[ Condtux ] ERROR: el paquete requerido no existe en trixie: $package" >&2
+        exit 1
+    fi
+done
+
+# shellcheck disable=SC2086
+apt-get $APT_OPTIONS install -y --no-install-recommends $REQUIRED_PACKAGES
+
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit; do
     if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
         echo "[ Condtux ] ERROR: no se instalo correctamente $package." >&2
         exit 1
@@ -56,6 +72,28 @@ for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightd
     fi
 done
 
+# mate-polkit es un agente GTK disponible en trixie. Su autostart original puede
+# estar limitado a MATE, por lo que Condtux registra una entrada exclusiva para
+# sesiones XFCE.
+if [ ! -x "$POLKIT_AGENT" ]; then
+    echo "[ Condtux ] ERROR: mate-polkit no instalo $POLKIT_AGENT" >&2
+    exit 1
+fi
+install -d -m 0755 /etc/xdg/autostart
+cat > "$POLKIT_AUTOSTART" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Condtux PolicyKit Agent
+Comment=Authentication agent for administrative actions
+Exec=$POLKIT_AGENT
+TryExec=$POLKIT_AGENT
+Terminal=false
+NoDisplay=true
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true
+EOF
+chmod 0644 "$POLKIT_AUTOSTART"
+
 # xfconfd es un daemon libexec y Debian no tiene por que ponerlo en PATH.
 XFCONFD_PATH="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
 if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
@@ -66,17 +104,13 @@ install -d -m 0755 /usr/local/bin
 ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
 
 DBUS_SERVICE=/usr/share/dbus-1/services/org.xfce.Xfconf.service
-if [ ! -f "$DBUS_SERVICE" ]; then
-    echo "[ Condtux ] ERROR: falta el servicio D-Bus de xfconf: $DBUS_SERVICE" >&2
-    exit 1
-fi
-if ! grep -q '^Name=org\.xfce\.Xfconf$' "$DBUS_SERVICE"; then
-    echo "[ Condtux ] ERROR: el servicio D-Bus de xfconf es invalido." >&2
+if [ ! -f "$DBUS_SERVICE" ] || ! grep -q '^Name=org\.xfce\.Xfconf$' "$DBUS_SERVICE"; then
+    echo "[ Condtux ] ERROR: servicio D-Bus de xfconf ausente o invalido." >&2
     exit 1
 fi
 
-# Verifica que los componentes principales puedan resolver sus bibliotecas.
-for binary in "$(command -v xfce4-session)" "$XFCONFD_PATH" "$(command -v xfwm4)"; do
+# Comprueba que los componentes principales resuelvan todas sus bibliotecas.
+for binary in "$(command -v xfce4-session)" "$XFCONFD_PATH" "$(command -v xfwm4)" "$POLKIT_AGENT"; do
     if ldd "$binary" 2>/dev/null | grep -q 'not found'; then
         echo "[ Condtux ] ERROR: bibliotecas sin resolver en $binary" >&2
         ldd "$binary" >&2 || true
@@ -90,10 +124,12 @@ if dpkg --audit | grep -q .; then
     exit 1
 fi
 
-if dpkg-query -W -f='${Status}' condtux-xfce-desktop 2>/dev/null | grep -q 'install ok installed'; then
-    echo "[ Condtux ] ERROR: se instalo accidentalmente condtux-xfce-desktop." >&2
-    exit 1
-fi
+for forbidden in condtux-xfce-desktop policykit-1-gnome; do
+    if dpkg-query -W -f='${Status}' "$forbidden" 2>/dev/null | grep -q 'install ok installed'; then
+        echo "[ Condtux ] ERROR: paquete incompatible instalado: $forbidden" >&2
+        exit 1
+    fi
+done
 
 # El Live entra primero en consola para seleccionar idioma y teclado. XFCE se
 # activa despues con condtux-live-xfce.
@@ -102,4 +138,4 @@ systemctl disable lightdm || true
 systemctl disable ssh.service ssh.socket 2>/dev/null || true
 systemctl disable bluetooth.service cups.service 2>/dev/null || true
 
-echo "[ Condtux ] XFCE estable instalado y validado correctamente."
+echo "[ Condtux ] XFCE estable y agente Polkit instalados y validados."

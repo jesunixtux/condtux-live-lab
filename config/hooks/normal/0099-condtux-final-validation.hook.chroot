@@ -25,10 +25,10 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$installer"
     grep -q 'apt install -y --no-install-recommends' "$installer"
     grep -q '^[[:space:]]*xfce4 \\' "$installer"
-    grep -q '^[[:space:]]*xfce4-session' "$installer" || true
+    grep -q 'dpkg -L xfconf' "$installer"
 
     if grep -q 'apt-cache show "$CONDTUX_XFCE_PACKAGE"' "$installer"; then
-        echo "[ Condtux ] ERROR: el instalador aun depende del paquete XFCE monolitico." >&2
+        echo "[ Condtux ] ERROR: el instalador aun depende del XFCE monolitico." >&2
         exit 1
     fi
 done
@@ -37,9 +37,7 @@ for script in \
     /usr/local/sbin/condtux-time-sync \
     /usr/local/sbin/condtux-copy-system-target \
     /usr/local/bin/condtux-install-gui \
-    /usr/local/bin/condtux-startxfce4 \
-    /etc/profile.d/condtux-xfce.sh \
-    /etc/X11/Xsession.d/55condtux-xfce-environment; do
+    /usr/local/bin/condtux-startxfce4; do
     sh -n "$script"
 done
 
@@ -50,14 +48,30 @@ for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightd
     fi
 done
 
-for command_name in startxfce4 xfce4-session xfconfd xfconf-query xfwm4 xfdesktop lightdm; do
+for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "[ Condtux ] ERROR: comando requerido ausente: $command_name" >&2
         exit 1
     fi
 done
 
-for binary in "$(command -v xfce4-session)" "$(command -v xfconfd)" "$(command -v xfwm4)"; do
+XFCONFD_PATH="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: no se encontro el daemon xfconfd." >&2
+    exit 1
+fi
+if [ ! -L /usr/local/bin/xfconfd ] || [ "$(readlink -f /usr/local/bin/xfconfd)" != "$(readlink -f "$XFCONFD_PATH")" ]; then
+    echo "[ Condtux ] ERROR: el enlace de xfconfd no apunta al runtime de Debian." >&2
+    exit 1
+fi
+
+DBUS_SERVICE=/usr/share/dbus-1/services/org.xfce.Xfconf.service
+if [ ! -f "$DBUS_SERVICE" ] || ! grep -q '^Name=org\.xfce\.Xfconf$' "$DBUS_SERVICE"; then
+    echo "[ Condtux ] ERROR: servicio D-Bus de xfconf ausente o invalido." >&2
+    exit 1
+fi
+
+for binary in "$(command -v xfce4-session)" "$XFCONFD_PATH" "$(command -v xfwm4)"; do
     if ldd "$binary" 2>/dev/null | grep -q 'not found'; then
         echo "[ Condtux ] ERROR: bibliotecas sin resolver en $binary" >&2
         ldd "$binary" >&2 || true
@@ -72,9 +86,21 @@ if dpkg --audit | grep -q .; then
 fi
 
 if dpkg-query -W -f='${Status}' condtux-xfce-desktop 2>/dev/null | grep -q 'install ok installed'; then
-    echo "[ Condtux ] ERROR: la ISO mezcla el antiguo paquete monolitico con XFCE Debian." >&2
+    echo "[ Condtux ] ERROR: la ISO contiene el paquete XFCE monolitico antiguo." >&2
     exit 1
 fi
+
+# Los archivos de entorno /opt pertenecian al experimento anterior y no deben
+# sobrevivir en la ISO basada en XFCE Debian.
+for legacy in \
+    /etc/profile.d/condtux-xfce.sh \
+    /etc/X11/Xsession.d/55condtux-xfce-environment \
+    /etc/ld.so.conf.d/condtux-xfce.conf; do
+    if [ -e "$legacy" ]; then
+        echo "[ Condtux ] ERROR: residuo XFCE monolitico detectado: $legacy" >&2
+        exit 1
+    fi
+done
 
 if [ -f /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml ] && \
    grep -q 'SaveOnExit' /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml && \

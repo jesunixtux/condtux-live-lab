@@ -77,9 +77,19 @@ if grep -REn --include='*.list.chroot' --include='*.hook.chroot' \
     exit 1
 fi
 
+# El kernel no debe instalarse durante la transaccion masiva de live-build. Su
+# hook dedicado verifica el .deb, los modulos, depmod y el initramfs por etapas.
+if grep -REn --include='*.list.chroot' \
+    '^[[:space:]]*linux-image(-amd64|-[0-9][^[:space:]]*)[[:space:]]*$' \
+    config/package-lists 2>/dev/null; then
+    echo "[ ${PROJECT_NAME} ] ERROR: una lista activa instala el kernel fuera del hook controlado." >&2
+    exit 1
+fi
+
 for required in \
     config/package-lists/condtux-base.list.chroot \
     config/package-lists/condtux-installer.list.chroot \
+    config/hooks/normal/0070-condtux-kernel-install.hook.chroot \
     config/hooks/normal/0082-condtux-xfce-live.hook.chroot \
     config/hooks/normal/0083-condtux-kernel-integrity.hook.chroot \
     config/hooks/normal/0098-condtux-xfce-account-fix.hook.chroot \
@@ -156,10 +166,10 @@ grep -E '^LB_(PARENT_)?ARCHIVE_AREAS=' config/bootstrap || true
 echo "[ ${PROJECT_NAME} ] Construyendo ISO..."
 sudo lb build 2>&1 | tee "$LOG_FILE"
 
-# Algunos comandos de initramfs pueden continuar incluso despues de imprimir un
-# error de depmod. Nunca publicar una imagen si el log contiene estas firmas.
-if grep -Eq 'depmod: ERROR|File is corrupt|File format not recognized|Unexpected end of input' "$LOG_FILE"; then
-    echo "[ ${PROJECT_NAME} ] ERROR: el log contiene errores de integridad del kernel." >&2
+# No publicar una imagen si cualquier etapa informa corrupcion de memoria,
+# modulos o initramfs, incluso cuando una herramienta devuelve codigo cero.
+if grep -Eqi 'depmod: ERROR|File is corrupt|File format not recognized|Unexpected end of input|double free|corruption \(out\)' "$LOG_FILE"; then
+    echo "[ ${PROJECT_NAME} ] ERROR: el log contiene errores de integridad del kernel o memoria." >&2
     exit 1
 fi
 
@@ -184,7 +194,7 @@ if [ -z "$MANIFEST" ]; then
     exit 1
 fi
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit zstd; do
+for package in linux-image-amd64 xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit zstd; do
     if ! grep -q "^${package}[[:space:]]" "$MANIFEST"; then
         echo "[ ${PROJECT_NAME} ] ERROR: falta $package en el manifiesto final." >&2
         exit 1

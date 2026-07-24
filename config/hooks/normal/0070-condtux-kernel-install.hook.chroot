@@ -14,6 +14,24 @@ INITRAMFS_DIVERTED=0
 
 echo "[ Condtux ] Instalando kernel Debian en una etapa controlada..."
 
+find_modules_dir() {
+    root="$1"
+    version="$2"
+
+    # Debian 13 usa usrmerge. Dentro del sistema /lib suele enlazar a /usr/lib,
+    # pero al extraer un unico .deb en un directorio vacio ese enlace pertenece
+    # a base-files y no existe. Por eso se comprueban ambas rutas explicitamente.
+    for relative in usr/lib/modules lib/modules; do
+        candidate="${root}/${relative}/${version}"
+        if [ -d "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 restore_diversions() {
     set +e
 
@@ -76,11 +94,11 @@ esac
 echo "[ Condtux ] Candidato: $KERNEL_META $KERNEL_META_VERSION -> $KERNEL_PACKAGE"
 
 rm -rf "$VERIFY_ROOT"
-mkdir -p "$VERIFY_ROOT/download" "$VERIFY_ROOT/extracted"
+install -d -m 0755 "$VERIFY_ROOT" "$VERIFY_ROOT/extracted"
+install -d -m 0755 -o _apt -g root "$VERIFY_ROOT/download"
 
-# Descargar y verificar el paquete real antes de tocar /lib/modules. APT valida
-# el hash del repositorio; dpkg-deb y tar validan ademas que el archivo pueda
-# abrirse y extraerse completamente.
+# APT valida el hash publicado por el repositorio. dpkg-deb y tar comprueban que
+# el archivo pueda abrirse y extraerse por completo antes de tocar /usr/lib/modules.
 (
     cd "$VERIFY_ROOT/download"
     apt-get $APT_OPTIONS download "$KERNEL_PACKAGE"
@@ -96,9 +114,14 @@ dpkg-deb --info "$KERNEL_DEB" >/dev/null
 dpkg-deb --fsys-tarfile "$KERNEL_DEB" | tar -tf - >/dev/null
 dpkg-deb -x "$KERNEL_DEB" "$VERIFY_ROOT/extracted"
 
-EXTRACTED_MODULES="$VERIFY_ROOT/extracted/lib/modules/$KERNEL_VERSION"
-if [ ! -d "$EXTRACTED_MODULES" ]; then
-    echo "[ Condtux ] ERROR: el paquete no contiene /lib/modules/$KERNEL_VERSION." >&2
+EXTRACTED_MODULES="$(find_modules_dir "$VERIFY_ROOT/extracted" "$KERNEL_VERSION" || true)"
+if [ -z "$EXTRACTED_MODULES" ]; then
+    echo "[ Condtux ] ERROR: el paquete no contiene modulos para $KERNEL_VERSION." >&2
+    echo "[ Condtux ] Rutas comprobadas:" >&2
+    echo "  $VERIFY_ROOT/extracted/usr/lib/modules/$KERNEL_VERSION" >&2
+    echo "  $VERIFY_ROOT/extracted/lib/modules/$KERNEL_VERSION" >&2
+    echo "[ Condtux ] Entradas de modulos encontradas en el paquete:" >&2
+    dpkg-deb -c "$KERNEL_DEB" | grep '/modules/' | head -n 20 >&2 || true
     exit 1
 fi
 
@@ -117,12 +140,10 @@ if [ "$ZST_COUNT" -gt 0 ]; then
     find "$EXTRACTED_MODULES" -type f -name '*.ko.zst' -print0 | xargs -0 -r zstd -tq
 fi
 
-echo "[ Condtux ] Paquete del kernel verificado antes de instalar ($XZ_COUNT xz, $ZST_COUNT zstd)."
+echo "[ Condtux ] Paquete verificado en ${EXTRACTED_MODULES#$VERIFY_ROOT/extracted} ($XZ_COUNT xz, $ZST_COUNT zstd)."
 
-# El postinst del kernel ejecuta depmod inmediatamente. Se difiere solo durante
-# esta transaccion para poder validar primero los archivos ya escritos en el
-# chroot. Luego se restaura el binario real, se ejecuta depmod y se genera el
-# initramfs manualmente.
+# El postinst ejecuta depmod inmediatamente. Se difiere durante la transaccion
+# para validar primero los archivos ya escritos; despues se restaura y ejecuta.
 if [ ! -x "$DEPMOD_PATH" ]; then
     echo "[ Condtux ] ERROR: falta $DEPMOD_PATH antes de instalar el kernel." >&2
     exit 1
@@ -148,13 +169,15 @@ INITRAMFS_WRAPPER
     chmod 0755 "$INITRAMFS_HOOK"
 fi
 
-apt-get $APT_OPTIONS install -y --no-install-recommends "$KERNEL_META"
+# Instalar exactamente el .deb que acaba de superar las comprobaciones. El
+# metapaquete queda instalado para recibir futuras actualizaciones de Debian.
+apt-get $APT_OPTIONS install -y --no-install-recommends "$KERNEL_DEB" "$KERNEL_META"
 
 restore_diversions
 
-INSTALLED_MODULES="/lib/modules/$KERNEL_VERSION"
-if [ ! -d "$INSTALLED_MODULES" ]; then
-    echo "[ Condtux ] ERROR: el kernel se configuro pero falta $INSTALLED_MODULES." >&2
+INSTALLED_MODULES="$(find_modules_dir "" "$KERNEL_VERSION" || true)"
+if [ -z "$INSTALLED_MODULES" ]; then
+    echo "[ Condtux ] ERROR: el kernel se configuro pero no hay modulos para $KERNEL_VERSION." >&2
     exit 1
 fi
 
@@ -163,7 +186,7 @@ INSTALLED_ZST_COUNT="$(find "$INSTALLED_MODULES" -type f -name '*.ko.zst' | wc -
 
 if [ "$INSTALLED_XZ_COUNT" -gt 0 ]; then
     if ! find "$INSTALLED_MODULES" -type f -name '*.ko.xz' -print0 | xargs -0 -r xz -t; then
-        echo "[ Condtux ] ERROR: los modulos se corrompieron despues de extraerse en el chroot." >&2
+        echo "[ Condtux ] ERROR: los modulos se corrompieron despues de escribirse en el chroot." >&2
         echo "[ Condtux ] Revise RAM, almacenamiento y errores I/O del builder Proxmox." >&2
         exit 1
     fi
@@ -174,6 +197,13 @@ if [ "$INSTALLED_ZST_COUNT" -gt 0 ]; then
         echo "[ Condtux ] Revise RAM y almacenamiento del builder Proxmox." >&2
         exit 1
     fi
+fi
+
+if [ "$INSTALLED_XZ_COUNT" -ne "$XZ_COUNT" ] || [ "$INSTALLED_ZST_COUNT" -ne "$ZST_COUNT" ]; then
+    echo "[ Condtux ] ERROR: la cantidad de modulos instalada no coincide con el paquete verificado." >&2
+    echo "[ Condtux ] Verificados: $XZ_COUNT xz, $ZST_COUNT zstd." >&2
+    echo "[ Condtux ] Instalados:  $INSTALLED_XZ_COUNT xz, $INSTALLED_ZST_COUNT zstd." >&2
+    exit 1
 fi
 
 DEPMOD_LOG=/tmp/condtux-depmod.log
@@ -218,4 +248,4 @@ fi
 rm -rf "$VERIFY_ROOT"
 trap - EXIT HUP INT TERM
 
-echo "[ Condtux ] Kernel $KERNEL_VERSION instalado, verificado e initramfs generado."
+echo "[ Condtux ] Kernel $KERNEL_VERSION instalado desde el paquete verificado e initramfs generado."

@@ -14,9 +14,7 @@ ca-certificates
 network-manager
 whiptail
 dialog
-openssh-server
 unattended-upgrades
-apt-listchanges
 fastfetch
 rsync
 gdisk

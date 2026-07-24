@@ -1,0 +1,73 @@
+name: Validate Condtux recipe
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r script; do
+            first_line="$(head -n 1 "$script" 2>/dev/null || true)"
+            case "$first_line" in
+              '#!'*bash*) bash -n "$script" ;;
+              '#!'*) dash -n "$script" ;;
+            esac
+          done < <(find scripts config/hooks/normal config/includes.chroot/usr/local \
+            -type f -print | sort)
+
+          bash -n config/includes.chroot/usr/local/sbin/condtux-install
+
+      - name: Validate active XFCE architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s config/package-lists/condtux-base.list.chroot
+          test -s config/hooks/normal/0082-condtux-xfce-live.hook.chroot
+          test -s config/hooks/normal/0098-condtux-xfce-account-fix.hook.chroot
+          test -s config/hooks/normal/0099-condtux-final-validation.hook.chroot
+
+          if grep -REn --include='*.list.chroot' \
+              '^[[:space:]]*condtux-xfce-desktop([[:space:]]|$)' \
+              config/package-lists; then
+            echo 'The obsolete monolithic XFCE package is active in a package list.' >&2
+            exit 1
+          fi
+
+          if grep -REn --include='*.hook.chroot' \
+              '^[[:space:]]*"?condtux-xfce-desktop"?[[:space:]]*\\?$|apt(-get)?[[:space:]].*install.*condtux-xfce-desktop' \
+              config/hooks/normal; then
+            echo 'The obsolete monolithic XFCE package is installed by an active hook.' >&2
+            exit 1
+          fi
+
+          test ! -e config/includes.chroot/etc/profile.d/condtux-xfce.sh
+          test ! -e config/includes.chroot/etc/X11/Xsession.d/55condtux-xfce-environment
+          test ! -e config/includes.chroot/etc/ld.so.conf.d/condtux-xfce.conf
+
+          grep -q 'xfce4-session' config/hooks/normal/0082-condtux-xfce-live.hook.chroot
+          grep -q 'dpkg -L xfconf' config/hooks/normal/0082-condtux-xfce-live.hook.chroot
+          grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' config/hooks/normal/0098-condtux-xfce-account-fix.hook.chroot
+
+      - name: Validate build entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q -- '--uefi-secure-boot enable' scripts/build-live-iso.sh
+          grep -q -- '--archive-areas "main non-free-firmware"' scripts/build-live-iso.sh
+          grep -q 'EFI/BOOT/BOOTX64.EFI' scripts/build-live-iso.sh
+          grep -q 'dpkg --audit' config/hooks/normal/0099-condtux-final-validation.hook.chroot

@@ -12,7 +12,6 @@ chmod 0755 \
     /usr/local/sbin/condtux-copy-system-target
 chmod 0644 /usr/share/xsessions/condtux-xfce.desktop
 
-# El ajuste inicial de 0.11 ocultaba la sesion segura original de XFCE.
 SESSION_OVERRIDE=/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml
 if [ -f "$SESSION_OVERRIDE" ] && \
    grep -q 'SaveOnExit' "$SESSION_OVERRIDE" && \
@@ -140,7 +139,7 @@ LIGHTDM
 }
 XFCE_FUNCTION
 
-cat > /tmp/condtux-account-override <<'ACCOUNT_OVERRIDE'
+cat > /tmp/condtux-account-function <<'ACCOUNT_FUNCTION'
 # CONDTUX_ACCOUNT_OVERRIDE_V3
 configure_accounts() {
   local status group extra_groups=""
@@ -202,9 +201,7 @@ configure_accounts() {
   chown -R "$INSTALL_USERNAME:$INSTALL_USERNAME" "/home/$INSTALL_USERNAME"
   echo "[ Condtux ] Cuenta $INSTALL_USERNAME creada y verificada."
 }
-
-configure_accounts
-ACCOUNT_OVERRIDE
+ACCOUNT_FUNCTION
 
 patch_installer() {
     file="$1"
@@ -212,7 +209,6 @@ patch_installer() {
 
     [ -f "$file" ] || return 0
 
-    # Sustituye por completo la funcion de escritorio antigua.
     awk '
         /^install_xfce_desktop\(\) \{/ {
             while ((getline line < "/tmp/condtux-install-xfce-function") > 0) print line
@@ -225,7 +221,20 @@ patch_installer() {
     ' "$file" > "$file.tmp"
     mv "$file.tmp" "$file"
 
-    # El perfil XFCE ya no depende del repo Condtux para construir el escritorio.
+    # Sustituye la funcion de cuentas original; no agrega una segunda definicion.
+    awk '
+        /^configure_accounts\(\) \{/ {
+            while ((getline line < "/tmp/condtux-account-function") > 0) print line
+            close("/tmp/condtux-account-function")
+            skipping = 1
+            next
+        }
+        skipping && /^install_condtux_repo_test$/ { skipping = 0 }
+        !skipping { print }
+    ' "$file" > "$file.tmp"
+    mv "$file.tmp" "$file"
+
+    # El perfil XFCE solo necesita Debian para construir el escritorio.
     awk '
         /^network_available\(\) \{/ { in_network = 1 }
         in_network && /^[[:space:]]*if \[ "\$INSTALL_PROFILE" = "xfce" \]; then$/ {
@@ -246,19 +255,6 @@ patch_installer() {
       -e 's/El perfil XFCE tambien necesita el repo Condtux por HTTPS.//g' \
       "$file"
 
-    if ! grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$file"; then
-        awk '
-            $0 == "configure_accounts" && !inserted {
-                while ((getline line < "/tmp/condtux-account-override") > 0) print line
-                close("/tmp/condtux-account-override")
-                inserted = 1
-                next
-            }
-            { print }
-        ' "$file" > "$file.tmp"
-        mv "$file.tmp" "$file"
-    fi
-
     if [ "$language" = "es" ]; then
         sed -i \
           -e 's/passwordbox "Password para $label"/passwordbox "Contrasena para $label\\n\\nLa escritura esta oculta por seguridad."/' \
@@ -271,6 +267,16 @@ patch_installer() {
           "$file"
     fi
 
+    if [ "$(grep -c '^install_xfce_desktop() {' "$file")" -ne 1 ]; then
+        echo "[ Condtux ] ERROR: cantidad invalida de funciones install_xfce_desktop en $file" >&2
+        exit 1
+    fi
+    if [ "$(grep -c '^configure_accounts() {' "$file")" -ne 1 ]; then
+        echo "[ Condtux ] ERROR: cantidad invalida de funciones configure_accounts en $file" >&2
+        exit 1
+    fi
+    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$file"
+
     chmod 0755 "$file"
     bash -n "$file"
 }
@@ -278,6 +284,6 @@ patch_installer() {
 patch_installer "$INSTALLER_ES" es
 patch_installer "$INSTALLER_EN" en
 
-rm -f /tmp/condtux-install-xfce-function /tmp/condtux-account-override
+rm -f /tmp/condtux-install-xfce-function /tmp/condtux-account-function
 
 echo "[ Condtux ] XFCE e instalador consolidados correctamente."

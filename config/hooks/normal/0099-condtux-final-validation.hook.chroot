@@ -17,6 +17,16 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
       "$installer"
 
     bash -n "$installer"
+
+    if [ "$(grep -c '^install_xfce_desktop() {' "$installer")" -ne 1 ]; then
+        echo "[ Condtux ] ERROR: install_xfce_desktop no quedo definido exactamente una vez en $installer" >&2
+        exit 1
+    fi
+    if [ "$(grep -c '^configure_accounts() {' "$installer")" -ne 1 ]; then
+        echo "[ Condtux ] ERROR: configure_accounts no quedo definido exactamente una vez en $installer" >&2
+        exit 1
+    fi
+
     grep -q 'condtux-time-sync --required' "$installer"
     grep -q 'confirm_destructive_disk' "$installer"
     grep -q 'condtux-copy-system-target' "$installer"
@@ -31,6 +41,29 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
         echo "[ Condtux ] ERROR: el instalador aun depende del XFCE monolitico." >&2
         exit 1
     fi
+
+    # bash -n del instalador no analiza el contenido de su heredoc CHROOT. Lo
+    # extraemos y comprobamos por separado para detectar errores antes de grabar
+    # la ISO.
+    chroot_test="/tmp/$(basename "$installer").chroot-test.sh"
+    awk '
+        /cat > "\$TARGET\/tmp\/condtux-chroot-setup\.sh" <<'"'"'CHROOT'"'"'/ {
+            capture = 1
+            next
+        }
+        capture && /^CHROOT$/ { exit }
+        capture { print }
+    ' "$installer" > "$chroot_test"
+
+    if [ ! -s "$chroot_test" ]; then
+        echo "[ Condtux ] ERROR: no se pudo extraer el script chroot desde $installer" >&2
+        exit 1
+    fi
+    bash -n "$chroot_test"
+    grep -q '^install_xfce_desktop() {' "$chroot_test"
+    grep -q '^configure_accounts() {' "$chroot_test"
+    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$chroot_test"
+    rm -f "$chroot_test"
 done
 
 for script in \
@@ -90,8 +123,6 @@ if dpkg-query -W -f='${Status}' condtux-xfce-desktop 2>/dev/null | grep -q 'inst
     exit 1
 fi
 
-# Los archivos de entorno /opt pertenecian al experimento anterior y no deben
-# sobrevivir en la ISO basada en XFCE Debian.
 for legacy in \
     /etc/profile.d/condtux-xfce.sh \
     /etc/X11/Xsession.d/55condtux-xfce-environment \
@@ -109,4 +140,4 @@ if [ -f /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml ] && \
     exit 1
 fi
 
-echo "[ Condtux 0.11 ] ISO validada: XFCE, cuentas, hora, seguridad y dpkg correctos."
+echo "[ Condtux 0.11 ] ISO validada: XFCE, instalador, cuentas, hora, seguridad y dpkg correctos."

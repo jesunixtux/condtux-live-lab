@@ -8,11 +8,9 @@ APT_OPTIONS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::http
 
 echo "[ Condtux ] Instalando XFCE 4.20 estable desde Debian trixie..."
 
-# La version monolitica condtux-xfce-desktop 0.8.0 duplicaba archivos de
-# xfconf/libxfce4util y hacia que dpkg abortara al resolver dependencias. La ISO
-# 0.11 usa los paquetes XFCE mantenidos por Debian. La personalizacion Condtux
-# permanece separada y el repo propio sigue disponible para aplicaciones y
-# actualizaciones de la distro.
+# Condtux 0.11 usa una sola implementacion de XFCE. El paquete monolitico
+# condtux-xfce-desktop 0.8.0 queda fuera de la ISO porque duplicaba archivos de
+# xfconf y libxfce4util con los paquetes de Debian.
 apt-get $APT_OPTIONS update
 apt-get $APT_OPTIONS install -y --no-install-recommends \
     xfce4 \
@@ -44,24 +42,41 @@ apt-get $APT_OPTIONS install -y --no-install-recommends \
     fonts-dejavu-core \
     hicolor-icon-theme
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4; do
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
     if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
         echo "[ Condtux ] ERROR: no se instalo correctamente $package." >&2
         exit 1
     fi
 done
 
-for command_name in startxfce4 xfce4-session xfconfd xfconf-query xfwm4 xfdesktop; do
+for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "[ Condtux ] ERROR: falta el comando XFCE requerido: $command_name" >&2
         exit 1
     fi
 done
 
-# Comprueba ahora, dentro del chroot, que los ejecutables principales no tengan
-# bibliotecas sin resolver. Es mejor abortar la build que publicar una ISO cuya
-# sesion grafica falla al iniciar.
-for binary in "$(command -v xfce4-session)" "$(command -v xfconfd)" "$(command -v xfwm4)"; do
+# xfconfd es un daemon libexec y Debian no tiene por que ponerlo en PATH.
+XFCONFD_PATH="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: xfconf esta instalado, pero no contiene xfconfd ejecutable." >&2
+    exit 1
+fi
+install -d -m 0755 /usr/local/bin
+ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
+
+DBUS_SERVICE=/usr/share/dbus-1/services/org.xfce.Xfconf.service
+if [ ! -f "$DBUS_SERVICE" ]; then
+    echo "[ Condtux ] ERROR: falta el servicio D-Bus de xfconf: $DBUS_SERVICE" >&2
+    exit 1
+fi
+if ! grep -q '^Name=org\.xfce\.Xfconf$' "$DBUS_SERVICE"; then
+    echo "[ Condtux ] ERROR: el servicio D-Bus de xfconf es invalido." >&2
+    exit 1
+fi
+
+# Verifica que los componentes principales puedan resolver sus bibliotecas.
+for binary in "$(command -v xfce4-session)" "$XFCONFD_PATH" "$(command -v xfwm4)"; do
     if ldd "$binary" 2>/dev/null | grep -q 'not found'; then
         echo "[ Condtux ] ERROR: bibliotecas sin resolver en $binary" >&2
         ldd "$binary" >&2 || true
@@ -72,6 +87,11 @@ done
 if dpkg --audit | grep -q .; then
     echo "[ Condtux ] ERROR: dpkg detecto paquetes incompletos:" >&2
     dpkg --audit >&2
+    exit 1
+fi
+
+if dpkg-query -W -f='${Status}' condtux-xfce-desktop 2>/dev/null | grep -q 'install ok installed'; then
+    echo "[ Condtux ] ERROR: se instalo accidentalmente condtux-xfce-desktop." >&2
     exit 1
 fi
 

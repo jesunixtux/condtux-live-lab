@@ -1,0 +1,221 @@
+#!/bin/sh
+set -eu
+
+export DEBIAN_FRONTEND=noninteractive
+export APT_LISTCHANGES_FRONTEND=none
+
+APT_OPTIONS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+KERNEL_META=linux-image-amd64
+VERIFY_ROOT=/tmp/condtux-kernel-verify
+DEPMOD_PATH=/usr/sbin/depmod
+INITRAMFS_HOOK=/etc/kernel/postinst.d/initramfs-tools
+DEPMOD_DIVERTED=0
+INITRAMFS_DIVERTED=0
+
+echo "[ Condtux ] Instalando kernel Debian en una etapa controlada..."
+
+restore_diversions() {
+    set +e
+
+    if [ "$INITRAMFS_DIVERTED" -eq 1 ]; then
+        rm -f "$INITRAMFS_HOOK"
+        dpkg-divert --quiet --local --rename --remove "$INITRAMFS_HOOK"
+        INITRAMFS_DIVERTED=0
+    fi
+
+    if [ "$DEPMOD_DIVERTED" -eq 1 ]; then
+        rm -f "$DEPMOD_PATH"
+        dpkg-divert --quiet --local --rename --remove "$DEPMOD_PATH"
+        DEPMOD_DIVERTED=0
+    fi
+
+    set -e
+}
+
+cleanup() {
+    restore_diversions
+    rm -rf "$VERIFY_ROOT"
+}
+
+trap cleanup EXIT HUP INT TERM
+
+apt-get $APT_OPTIONS update
+apt-get $APT_OPTIONS install -y --no-install-recommends \
+    linux-base \
+    initramfs-tools \
+    initramfs-tools-core \
+    kmod \
+    xz-utils \
+    zstd
+
+KERNEL_PACKAGE="$(apt-cache depends --important "$KERNEL_META" 2>/dev/null | \
+    sed -n 's/.*Depends: \(linux-image-[0-9][^ ]*-amd64\)$/\1/p' | head -n 1)"
+
+if [ -z "$KERNEL_PACKAGE" ]; then
+    echo "[ Condtux ] ERROR: no se pudo resolver el kernel real desde $KERNEL_META." >&2
+    exit 1
+fi
+
+KERNEL_META_VERSION="$(apt-cache policy "$KERNEL_META" | awk '/Candidate:/ { print $2; exit }')"
+KERNEL_VERSION="$(printf '%s\n' "$KERNEL_PACKAGE" | sed 's/^linux-image-//')"
+
+case "$KERNEL_META_VERSION" in
+    ''|'(none)')
+        echo "[ Condtux ] ERROR: $KERNEL_META no tiene candidato APT." >&2
+        exit 1
+        ;;
+esac
+
+case "$KERNEL_VERSION" in
+    ''|*[!A-Za-z0-9.+_~-]*)
+        echo "[ Condtux ] ERROR: version de kernel invalida: $KERNEL_VERSION" >&2
+        exit 1
+        ;;
+esac
+
+echo "[ Condtux ] Candidato: $KERNEL_META $KERNEL_META_VERSION -> $KERNEL_PACKAGE"
+
+rm -rf "$VERIFY_ROOT"
+mkdir -p "$VERIFY_ROOT/download" "$VERIFY_ROOT/extracted"
+
+# Descargar y verificar el paquete real antes de tocar /lib/modules. APT valida
+# el hash del repositorio; dpkg-deb y tar validan ademas que el archivo pueda
+# abrirse y extraerse completamente.
+(
+    cd "$VERIFY_ROOT/download"
+    apt-get $APT_OPTIONS download "$KERNEL_PACKAGE"
+)
+
+KERNEL_DEB="$(find "$VERIFY_ROOT/download" -maxdepth 1 -type f -name "${KERNEL_PACKAGE}_*.deb" | head -n 1)"
+if [ -z "$KERNEL_DEB" ] || [ ! -s "$KERNEL_DEB" ]; then
+    echo "[ Condtux ] ERROR: no se descargo el paquete $KERNEL_PACKAGE." >&2
+    exit 1
+fi
+
+dpkg-deb --info "$KERNEL_DEB" >/dev/null
+dpkg-deb --fsys-tarfile "$KERNEL_DEB" | tar -tf - >/dev/null
+dpkg-deb -x "$KERNEL_DEB" "$VERIFY_ROOT/extracted"
+
+EXTRACTED_MODULES="$VERIFY_ROOT/extracted/lib/modules/$KERNEL_VERSION"
+if [ ! -d "$EXTRACTED_MODULES" ]; then
+    echo "[ Condtux ] ERROR: el paquete no contiene /lib/modules/$KERNEL_VERSION." >&2
+    exit 1
+fi
+
+XZ_COUNT="$(find "$EXTRACTED_MODULES" -type f -name '*.ko.xz' | wc -l)"
+ZST_COUNT="$(find "$EXTRACTED_MODULES" -type f -name '*.ko.zst' | wc -l)"
+
+if [ "$XZ_COUNT" -eq 0 ] && [ "$ZST_COUNT" -eq 0 ]; then
+    echo "[ Condtux ] ERROR: el paquete de kernel no contiene modulos comprimidos." >&2
+    exit 1
+fi
+
+if [ "$XZ_COUNT" -gt 0 ]; then
+    find "$EXTRACTED_MODULES" -type f -name '*.ko.xz' -print0 | xargs -0 -r xz -t
+fi
+if [ "$ZST_COUNT" -gt 0 ]; then
+    find "$EXTRACTED_MODULES" -type f -name '*.ko.zst' -print0 | xargs -0 -r zstd -tq
+fi
+
+echo "[ Condtux ] Paquete del kernel verificado antes de instalar ($XZ_COUNT xz, $ZST_COUNT zstd)."
+
+# El postinst del kernel ejecuta depmod inmediatamente. Se difiere solo durante
+# esta transaccion para poder validar primero los archivos ya escritos en el
+# chroot. Luego se restaura el binario real, se ejecuta depmod y se genera el
+# initramfs manualmente.
+if [ ! -x "$DEPMOD_PATH" ]; then
+    echo "[ Condtux ] ERROR: falta $DEPMOD_PATH antes de instalar el kernel." >&2
+    exit 1
+fi
+
+dpkg-divert --quiet --local --rename --add "$DEPMOD_PATH"
+DEPMOD_DIVERTED=1
+cat > "$DEPMOD_PATH" <<'DEPMOD_WRAPPER'
+#!/bin/sh
+# CONDTUX_DEFERRED_DEPMOD
+exit 0
+DEPMOD_WRAPPER
+chmod 0755 "$DEPMOD_PATH"
+
+if [ -e "$INITRAMFS_HOOK" ]; then
+    dpkg-divert --quiet --local --rename --add "$INITRAMFS_HOOK"
+    INITRAMFS_DIVERTED=1
+    cat > "$INITRAMFS_HOOK" <<'INITRAMFS_WRAPPER'
+#!/bin/sh
+# CONDTUX_DEFERRED_INITRAMFS
+exit 0
+INITRAMFS_WRAPPER
+    chmod 0755 "$INITRAMFS_HOOK"
+fi
+
+apt-get $APT_OPTIONS install -y --no-install-recommends "$KERNEL_META"
+
+restore_diversions
+
+INSTALLED_MODULES="/lib/modules/$KERNEL_VERSION"
+if [ ! -d "$INSTALLED_MODULES" ]; then
+    echo "[ Condtux ] ERROR: el kernel se configuro pero falta $INSTALLED_MODULES." >&2
+    exit 1
+fi
+
+INSTALLED_XZ_COUNT="$(find "$INSTALLED_MODULES" -type f -name '*.ko.xz' | wc -l)"
+INSTALLED_ZST_COUNT="$(find "$INSTALLED_MODULES" -type f -name '*.ko.zst' | wc -l)"
+
+if [ "$INSTALLED_XZ_COUNT" -gt 0 ]; then
+    if ! find "$INSTALLED_MODULES" -type f -name '*.ko.xz' -print0 | xargs -0 -r xz -t; then
+        echo "[ Condtux ] ERROR: los modulos se corrompieron despues de extraerse en el chroot." >&2
+        echo "[ Condtux ] Revise RAM, almacenamiento y errores I/O del builder Proxmox." >&2
+        exit 1
+    fi
+fi
+if [ "$INSTALLED_ZST_COUNT" -gt 0 ]; then
+    if ! find "$INSTALLED_MODULES" -type f -name '*.ko.zst' -print0 | xargs -0 -r zstd -tq; then
+        echo "[ Condtux ] ERROR: los modulos zstd se corrompieron dentro del chroot." >&2
+        echo "[ Condtux ] Revise RAM y almacenamiento del builder Proxmox." >&2
+        exit 1
+    fi
+fi
+
+DEPMOD_LOG=/tmp/condtux-depmod.log
+if ! "$DEPMOD_PATH" -a "$KERNEL_VERSION" >"$DEPMOD_LOG" 2>&1; then
+    cat "$DEPMOD_LOG" >&2
+    echo "[ Condtux ] ERROR: depmod fallo para $KERNEL_VERSION." >&2
+    exit 1
+fi
+if grep -Eq 'ERROR:|File is corrupt|File format not recognized|Unexpected end of input|double free|corruption' "$DEPMOD_LOG"; then
+    cat "$DEPMOD_LOG" >&2
+    echo "[ Condtux ] ERROR: depmod detecto corrupcion en el kernel instalado." >&2
+    exit 1
+fi
+rm -f "$DEPMOD_LOG"
+
+if [ -e "/boot/initrd.img-$KERNEL_VERSION" ]; then
+    update-initramfs -u -k "$KERNEL_VERSION"
+else
+    update-initramfs -c -k "$KERNEL_VERSION"
+fi
+
+if [ ! -s "/boot/vmlinuz-$KERNEL_VERSION" ] || [ ! -s "/boot/initrd.img-$KERNEL_VERSION" ]; then
+    echo "[ Condtux ] ERROR: kernel o initramfs final ausente para $KERNEL_VERSION." >&2
+    exit 1
+fi
+
+if ! dpkg-query -W -f='${Status}' "$KERNEL_PACKAGE" 2>/dev/null | grep -q 'install ok installed'; then
+    echo "[ Condtux ] ERROR: $KERNEL_PACKAGE no quedo configurado." >&2
+    exit 1
+fi
+if ! dpkg-query -W -f='${Status}' "$KERNEL_META" 2>/dev/null | grep -q 'install ok installed'; then
+    echo "[ Condtux ] ERROR: $KERNEL_META no quedo configurado." >&2
+    exit 1
+fi
+
+if dpkg --audit | grep -q .; then
+    echo "[ Condtux ] ERROR: dpkg quedo inconsistente despues del kernel:" >&2
+    dpkg --audit >&2
+    exit 1
+fi
+
+rm -rf "$VERIFY_ROOT"
+trap - EXIT HUP INT TERM
+
+echo "[ Condtux ] Kernel $KERNEL_VERSION instalado, verificado e initramfs generado."

@@ -21,6 +21,7 @@ nftables
 mokutil
 live-config
 live-boot
+zstd
 whiptail
 shim-signed
 grub-efi-amd64-signed

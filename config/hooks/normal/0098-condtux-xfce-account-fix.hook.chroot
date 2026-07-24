@@ -10,14 +10,9 @@ chmod 0755 \
     /usr/local/bin/condtux-startxfce4 \
     /usr/local/sbin/condtux-time-sync \
     /usr/local/sbin/condtux-copy-system-target
+chmod 0644 /usr/share/xsessions/condtux-xfce.desktop
 
-chmod 0644 \
-    /etc/profile.d/condtux-xfce.sh \
-    /etc/X11/Xsession.d/55condtux-xfce-environment \
-    /etc/ld.so.conf.d/condtux-xfce.conf \
-    /usr/share/xsessions/condtux-xfce.desktop
-
-# El ajuste anterior de 0.11 ocultaba la sesion segura original de XFCE.
+# El ajuste inicial de 0.11 ocultaba la sesion segura original de XFCE.
 SESSION_OVERRIDE=/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml
 if [ -f "$SESSION_OVERRIDE" ] && \
    grep -q 'SaveOnExit' "$SESSION_OVERRIDE" && \
@@ -25,23 +20,31 @@ if [ -f "$SESSION_OVERRIDE" ] && \
     rm -f "$SESSION_OVERRIDE"
 fi
 
-# La sesion Live debe estar completa antes de producir la imagen.
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4; do
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
     dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || {
         echo "[ Condtux ] ERROR: falta el paquete $package." >&2
         exit 1
     }
 done
 
-for command_name in startxfce4 xfce4-session xfconfd xfconf-query xfwm4 xfdesktop; do
+for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm; do
     command -v "$command_name" >/dev/null 2>&1 || {
         echo "[ Condtux ] ERROR: falta $command_name." >&2
         exit 1
     }
 done
 
+XFCONFD_PATH="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+if [ -z "$XFCONFD_PATH" ] || [ ! -x "$XFCONFD_PATH" ]; then
+    echo "[ Condtux ] ERROR: xfconf no contiene un xfconfd ejecutable." >&2
+    exit 1
+fi
+ln -sfn "$XFCONFD_PATH" /usr/local/bin/xfconfd
+
 cat > /tmp/condtux-install-xfce-function <<'XFCE_FUNCTION'
 install_xfce_desktop() {
+  local xfconfd_path package command_name
+
   echo "[ Condtux ] Instalando escritorio XFCE estable..."
 
   apt install -y --no-install-recommends \
@@ -74,19 +77,27 @@ install_xfce_desktop() {
     fonts-dejavu-core \
     hicolor-icon-theme
 
-  for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4; do
+  for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm; do
     if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
       echo "[ Condtux ] ERROR: no se instalo correctamente $package." >&2
       exit 1
     fi
   done
 
-  for command_name in startxfce4 xfce4-session xfconfd xfconf-query xfwm4 xfdesktop; do
+  for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       echo "[ Condtux ] ERROR: falta el comando $command_name." >&2
       exit 1
     fi
   done
+
+  xfconfd_path="$(dpkg -L xfconf 2>/dev/null | awk '/\/xfconfd$/ { print; exit }')"
+  if [ -z "$xfconfd_path" ] || [ ! -x "$xfconfd_path" ]; then
+    echo "[ Condtux ] ERROR: xfconf no contiene xfconfd." >&2
+    exit 1
+  fi
+  install -d -m 0755 /usr/local/bin
+  ln -sfn "$xfconfd_path" /usr/local/bin/xfconfd
 
   if [ ! -x /usr/local/bin/condtux-startxfce4 ]; then
     cat > /usr/local/bin/condtux-startxfce4 <<'STARTXFCE'
@@ -117,6 +128,12 @@ SESSION
 user-session=condtux-xfce
 greeter-session=lightdm-gtk-greeter
 LIGHTDM
+
+  if dpkg --audit | grep -q .; then
+    echo "[ Condtux ] ERROR: dpkg quedo en estado inconsistente al instalar XFCE." >&2
+    dpkg --audit >&2
+    exit 1
+  fi
 
   systemctl set-default graphical.target || true
   systemctl enable lightdm || true
@@ -195,8 +212,7 @@ patch_installer() {
 
     [ -f "$file" ] || return 0
 
-    # Sustituye por completo la funcion de escritorio antigua. Evita depender
-    # del paquete monolitico 0.8.0 y sus archivos duplicados.
+    # Sustituye por completo la funcion de escritorio antigua.
     awk '
         /^install_xfce_desktop\(\) \{/ {
             while ((getline line < "/tmp/condtux-install-xfce-function") > 0) print line
@@ -204,14 +220,12 @@ patch_installer() {
             skipping = 1
             next
         }
-        skipping && /^configure_accounts\(\) \{/ {
-            skipping = 0
-        }
+        skipping && /^configure_accounts\(\) \{/ { skipping = 0 }
         !skipping { print }
     ' "$file" > "$file.tmp"
     mv "$file.tmp" "$file"
 
-    # El perfil XFCE ya solo necesita los repositorios oficiales de Debian.
+    # El perfil XFCE ya no depende del repo Condtux para construir el escritorio.
     awk '
         /^network_available\(\) \{/ { in_network = 1 }
         in_network && /^[[:space:]]*if \[ "\$INSTALL_PROFILE" = "xfce" \]; then$/ {
@@ -229,7 +243,6 @@ patch_installer() {
 
     sed -i \
       -e '/^[[:space:]]*condtux-xfce-desktop \\$/d' \
-      -e '/^[[:space:]]*xfconf \\$/d' \
       -e 's/El perfil XFCE tambien necesita el repo Condtux por HTTPS.//g' \
       "$file"
 

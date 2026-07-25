@@ -3,6 +3,20 @@ set -eu
 
 echo "[ Condtux ] Ejecutando validacion final de la ISO..."
 
+check_script_syntax() {
+    script="$1"
+    first_line="$(head -n 1 "$script" 2>/dev/null || true)"
+
+    case "$first_line" in
+        '#!'*bash*) bash -n "$script" ;;
+        '#!'*sh*) sh -n "$script" ;;
+        *)
+            echo "[ Condtux ] ERROR: $script no declara un interprete compatible." >&2
+            exit 1
+            ;;
+    esac
+}
+
 for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install-en; do
     [ -f "$installer" ] || {
         echo "[ Condtux ] ERROR: falta $installer" >&2
@@ -77,7 +91,11 @@ for script in \
     /usr/local/sbin/condtux-copy-system-target \
     /usr/local/bin/condtux-install-gui \
     /usr/local/bin/condtux-startxfce4; do
-    sh -n "$script"
+    [ -f "$script" ] || {
+        echo "[ Condtux ] ERROR: falta $script" >&2
+        exit 1
+    }
+    check_script_syntax "$script"
 done
 
 for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit zstd; do

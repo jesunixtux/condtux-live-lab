@@ -70,7 +70,7 @@ echo "[ ${PROJECT_NAME} ] Modo de build: $BUILD_MODE"
 echo "[ ${PROJECT_NAME} ] Aplicando version central..."
 sh scripts/apply-version.sh
 
-chmod +x config/hooks/normal/*.hook.chroot config/hooks/normal/*.hook.binary 2>/dev/null || true
+chmod +x scripts/*.sh config/hooks/normal/*.hook.chroot config/hooks/normal/*.hook.binary 2>/dev/null || true
 
 echo "[ ${PROJECT_NAME} ] Validando scripts antes de construir..."
 while IFS= read -r script; do
@@ -115,6 +115,7 @@ if grep -REn --include='*.list.chroot' \
 fi
 
 for required in \
+    scripts/validate-built-iso.sh \
     config/package-lists/condtux-base.list.chroot \
     config/package-lists/condtux-installer.list.chroot \
     config/hooks/normal/0070-condtux-kernel-install.hook.chroot \
@@ -138,6 +139,15 @@ for required in \
     fi
 done
 
+# xorriso se mantiene instalado en el builder para poder auditar el catalogo El
+# Torito despues de que live-build termine. Si ya estaba instalado, esta etapa no
+# realiza cambios.
+if ! command -v xorriso >/dev/null 2>&1; then
+    echo "[ ${PROJECT_NAME} ] Instalando xorriso en el builder para la validacion UEFI..."
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends xorriso
+fi
+
 echo "[ ${PROJECT_NAME} ] Eliminando siempre chroot, binarios y marcadores anteriores..."
 sudo lb clean --all || true
 sudo rm -rf chroot binary .build
@@ -159,7 +169,7 @@ fi
 
 echo "[ ${PROJECT_NAME} ] Borrando binarios ISO viejos..."
 rm -f ./*.iso live-image-* binary.* chroot.files chroot.packages.install chroot.packages.live
-rm -f output/*.iso output/*.sha256
+rm -f output/*.iso output/*.sha256 output/*.uefi-report.txt
 
 echo "[ ${PROJECT_NAME} ] Sincronizando wallpapers..."
 scripts/sync-wallpapers.sh
@@ -253,18 +263,12 @@ for forbidden in condtux-xfce-desktop policykit-1-gnome openssh-server apt-listc
     fi
 done
 
-if command -v xorriso >/dev/null 2>&1; then
-    if ! xorriso -indev "$ISO_OUTPUT" -find /EFI/BOOT/BOOTX64.EFI -type f -print 2>/dev/null | \
-         grep -q '/EFI/BOOT/BOOTX64.EFI'; then
-        echo "[ ${PROJECT_NAME} ] ERROR: falta EFI/BOOT/BOOTX64.EFI." >&2
-        exit 1
-    fi
-fi
+echo "[ ${PROJECT_NAME} ] Validando ESP embebida, fallback UEFI y catalogo El Torito..."
+bash scripts/validate-built-iso.sh "$ISO_OUTPUT" binary
 
-sha256sum "$ISO_OUTPUT" | tee "${ISO_OUTPUT}.sha256"
 trap - ERR
 
 echo
 echo "[ ${PROJECT_NAME} ] ISO lista y validada:"
-ls -lh "$ISO_OUTPUT" "${ISO_OUTPUT}.sha256"
+ls -lh "$ISO_OUTPUT" "${ISO_OUTPUT}.sha256" "${ISO_OUTPUT}.uefi-report.txt"
 echo "[ ${PROJECT_NAME} ] Log: $LOG_FILE"

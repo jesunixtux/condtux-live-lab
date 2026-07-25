@@ -1,7 +1,12 @@
-#!/bin/bash
+#!/bin/sh
 set -u
 
-MODE="${1:---best-effort}"
+if [ "$#" -gt 0 ]; then
+    MODE="$1"
+else
+    MODE="--best-effort"
+fi
+
 TIMEOUT_SECONDS="${CONDTUX_TIME_TIMEOUT:-60}"
 
 case "$MODE" in
@@ -12,6 +17,13 @@ case "$MODE" in
         ;;
     *)
         echo "Uso: condtux-time-sync [--boot|--required|--best-effort]" >&2
+        exit 2
+        ;;
+esac
+
+case "$TIMEOUT_SECONDS" in
+    ''|*[!0-9]*)
+        echo "[ Condtux Time ] Timeout invalido: $TIMEOUT_SECONDS" >&2
         exit 2
         ;;
 esac
@@ -29,14 +41,13 @@ is_synced() {
 }
 
 valid_epoch() {
-    local value="$1"
+    value="$1"
     # 2025-01-01 hasta 2040-01-01.
     [ "$value" -ge 1735689600 ] 2>/dev/null && [ "$value" -le 2208988800 ] 2>/dev/null
 }
 
 remote_epoch_insecure() {
-    local url="$1" header remote_date
-
+    url="$1"
     header="$(curl -kfsSI --connect-timeout 7 --max-time 15 "$url" 2>/dev/null || true)"
     remote_date="$(printf '%s\n' "$header" | awk -F': ' 'tolower($1)=="date" {sub("\r$", "", $2); print $2; exit}')"
     [ -n "$remote_date" ] || return 1
@@ -50,8 +61,6 @@ save_hardware_clock() {
 }
 
 bootstrap_from_debian() {
-    local epoch_a epoch_b difference selected
-
     command -v curl >/dev/null 2>&1 || return 1
 
     # Se usa -k solamente para arrancar desde una BIOS con fecha absurda.
@@ -71,7 +80,7 @@ bootstrap_from_debian() {
     date -u -s "@$selected" >/dev/null 2>&1 || return 1
 
     # Una vez corregida la fecha, TLS debe validar normalmente. Si no valida,
-    # el rescate se rechaza y el instalador no confiará en esa hora.
+    # el rescate se rechaza y el instalador no confia en esa hora.
     curl -fsSI --connect-timeout 8 --max-time 15 \
         https://deb.debian.org/debian/dists/trixie/InRelease >/dev/null 2>&1 || return 1
 
@@ -86,7 +95,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if ! command -v timedatectl >/dev/null 2>&1; then
-    log "timedatectl no está disponible."
+    log "timedatectl no esta disponible."
     [ "$MODE" = "--required" ] && exit 1
     exit 0
 fi
@@ -102,20 +111,22 @@ if is_synced; then
     exit 0
 fi
 
-log "Esperando sincronización de red y hora..."
-for ((second = 0; second < TIMEOUT_SECONDS; second++)); do
+log "Esperando sincronizacion de red y hora..."
+second=0
+while [ "$second" -lt "$TIMEOUT_SECONDS" ]; do
     if is_synced; then
         save_hardware_clock
         log "Reloj sincronizado por NTP: $(date -R)"
         exit 0
     fi
     sleep 1
+    second=$((second + 1))
 done
 
 if bootstrap_from_debian; then
     exit 0
 fi
 
-log "No se pudo sincronizar la hora automáticamente."
+log "No se pudo sincronizar la hora automaticamente."
 [ "$MODE" = "--required" ] && exit 1
 exit 0

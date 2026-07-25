@@ -1,39 +1,35 @@
 #!/bin/sh
-set -e
+set -eu
+
+KEYRING=/usr/share/keyrings/condtux-archive-keyring.gpg
+SOURCES=/etc/apt/sources.list.d/condtux.sources
 
 echo "[ Condtux ] Configurando repositorios APT..."
 
 cat > /etc/apt/sources.list <<'EOF'
-deb https://deb.debian.org/debian trixie main
-deb https://deb.debian.org/debian trixie-updates main
-deb https://security.debian.org/debian-security trixie-security main
+deb https://deb.debian.org/debian trixie main non-free-firmware
+deb https://deb.debian.org/debian trixie-updates main non-free-firmware
+deb https://security.debian.org/debian-security trixie-security main non-free-firmware
 EOF
 
-rm -f /etc/apt/sources.list.d/condtux.sources
-rm -f /etc/apt/sources.list.d/condtux.sources.disabled
+rm -f "$SOURCES" /etc/apt/sources.list.d/condtux.sources.disabled
 
-if [ -f /usr/share/keyrings/condtux-archive-keyring.gpg ]; then
-    cat > /etc/apt/sources.list.d/condtux.sources <<'EOF'
+if [ ! -s "$KEYRING" ]; then
+    echo "[ Condtux ] ERROR: falta el keyring obligatorio $KEYRING." >&2
+    echo "[ Condtux ] El chroot esta incompleto; no reanude una build fallida con 'lb build'." >&2
+    exit 1
+fi
+
+cat > "$SOURCES" <<EOF
 Types: deb
 URIs: https://repo-condtux.jeval.cl/apt
 Suites: trixie
 Components: main
 Architectures: amd64
-Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
+Signed-By: $KEYRING
 EOF
-    echo "[ Condtux ] Repo Condtux activo."
-else
-    cat > /etc/apt/sources.list.d/condtux.sources.disabled <<'EOF'
-# Condtux repo - falta /usr/share/keyrings/condtux-archive-keyring.gpg.
-#
-# Types: deb
-# URIs: https://repo-condtux.jeval.cl/apt
-# Suites: trixie
-# Components: main
-# Architectures: amd64
-# Signed-By: /usr/share/keyrings/condtux-archive-keyring.gpg
-EOF
-    echo "[ Condtux ] Repo Condtux desactivado: falta keyring."
-fi
 
+chmod 0644 /etc/apt/sources.list "$SOURCES" "$KEYRING"
+
+echo "[ Condtux ] Repo Condtux activo con signed-by."
 echo "[ Condtux ] Repositorios APT listos."

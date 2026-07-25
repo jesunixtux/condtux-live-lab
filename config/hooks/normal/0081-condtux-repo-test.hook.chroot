@@ -3,6 +3,8 @@ set -u
 
 REPO_URL="https://repo-condtux.jeval.cl/apt/dists/trixie/InRelease"
 PACKAGE="condtux-repo-test"
+KEYRING=/usr/share/keyrings/condtux-archive-keyring.gpg
+SOURCES=/etc/apt/sources.list.d/condtux.sources
 
 retry() {
     attempts="$1"
@@ -25,8 +27,20 @@ retry() {
 
 echo "[ Condtux ] Probando repo Condtux con $PACKAGE..."
 
+for command_name in curl apt-get apt-cache; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        echo "[ Condtux ] ERROR: falta $command_name; el chroot no contiene el perfil base completo." >&2
+        exit 1
+    fi
+done
+
+if [ ! -s "$KEYRING" ] || [ ! -s "$SOURCES" ]; then
+    echo "[ Condtux ] ERROR: repo Condtux incompleto; falta keyring o archivo sources." >&2
+    exit 1
+fi
+
 if ! retry 4 10 curl -fsSIL --connect-timeout 15 "$REPO_URL" >/dev/null; then
-    echo "[ Condtux ] ADVERTENCIA: repo Condtux no disponible temporalmente; se omite la prueba." >&2
+    echo "[ Condtux ] ADVERTENCIA: repo Condtux no disponible temporalmente; se omite la prueba de red." >&2
     exit 0
 fi
 

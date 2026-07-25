@@ -1,14 +1,40 @@
 #!/bin/sh
 set -eu
 
-echo "[ Condtux ] Preparando usuario y configuracion Live 0.10..."
+VERSION="$(cat /etc/condtux-version 2>/dev/null || true)"
+case "$VERSION" in
+    ''|*[!0-9.]*|.*|*.)
+        echo "[ Condtux ] ERROR: falta una version valida en /etc/condtux-version." >&2
+        exit 1
+        ;;
+esac
 
-# Los archivos nuevos creados por GitHub se normalizan aqui como ejecutables.
+echo "[ Condtux ] Preparando usuario y configuracion Live $VERSION..."
+
+REQUIRED_FILES="
+/usr/local/sbin/condtux-language
+/usr/local/sbin/condtux-live-setup
+/usr/local/sbin/condtux-copy-live-language-target
+/usr/local/bin/condtux-install-gui
+/usr/local/sbin/condtux-install
+/etc/skel/Desktop/condtux-install.desktop
+/etc/systemd/system/condtux-live-setup.service
+"
+
+for file in $REQUIRED_FILES; do
+    if [ ! -f "$file" ]; then
+        echo "[ Condtux ] ERROR: falta archivo obligatorio del Live: $file" >&2
+        echo "[ Condtux ] El chroot fue restaurado sin includes.chroot; reconstruya con scripts/build-live-iso.sh --cached." >&2
+        exit 1
+    fi
+done
+
 chmod 0755 \
     /usr/local/sbin/condtux-language \
     /usr/local/sbin/condtux-live-setup \
     /usr/local/sbin/condtux-copy-live-language-target \
-    /usr/local/bin/condtux-install-gui
+    /usr/local/bin/condtux-install-gui \
+    /usr/local/sbin/condtux-install
 
 # Genera los dos idiomas soportados antes del primer arranque.
 sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
@@ -23,30 +49,26 @@ install -D -m 0644 \
     /usr/share/applications/condtux-install.desktop
 
 # Integra en el instalador las herramientas de idioma y GUI del sistema final.
-INSTALLER="/usr/local/sbin/condtux-install"
-if [ -f "$INSTALLER" ]; then
-    sed -i \
-        -e 's/Condtux Installer 0\.9/Condtux Installer 0.10/g' \
-        -e 's/Condtux 0\.9/Condtux 0.10/g' \
-        -e 's#github.com/jechugit/#github.com/jesunixtux/#g' \
-        "$INSTALLER"
+INSTALLER=/usr/local/sbin/condtux-install
+sed -i \
+    -e "s/Condtux Installer 0\.[0-9][0-9]*/Condtux Installer $VERSION/g" \
+    -e "s/Condtux 0\.[0-9][0-9]*/Condtux $VERSION/g" \
+    -e 's#github.com/jechugit/#github.com/jesunixtux/#g' \
+    "$INSTALLER"
 
-    if ! grep -q '^[[:space:]]*kbd \\' "$INSTALLER"; then
-        sed -i '/keyboard-configuration \\/a\  kbd \\\n  whiptail \\' "$INSTALLER"
-    fi
-
-    # xterm evita instalar xfce4-terminal y sus bibliotecas XFCE de Debian,
-    # que duplican archivos del paquete monolitico condtux-xfce-desktop.
-    if ! grep -q '^[[:space:]]*xterm \\' "$INSTALLER"; then
-        sed -i '/lightdm-gtk-greeter \\/a\    xterm \\\n    zenity \\' "$INSTALLER"
-    fi
-
-    if ! grep -q 'condtux-copy-live-language-target' "$INSTALLER"; then
-        sed -i '/chroot "\$TARGET" \/bin\/bash \/tmp\/condtux-chroot-setup.sh/a\    /usr/local/sbin/condtux-copy-live-language-target "$TARGET"' "$INSTALLER"
-    fi
-
-    chmod 0755 "$INSTALLER"
+if ! grep -q '^[[:space:]]*kbd \\' "$INSTALLER"; then
+    sed -i '/keyboard-configuration \\/a\  kbd \\\n  whiptail \\' "$INSTALLER"
 fi
+
+if ! grep -q '^[[:space:]]*xterm \\' "$INSTALLER"; then
+    sed -i '/lightdm-gtk-greeter \\/a\    xterm \\\n    zenity \\' "$INSTALLER"
+fi
+
+if ! grep -q 'condtux-copy-live-language-target' "$INSTALLER"; then
+    sed -i '/chroot "\$TARGET" \/bin\/bash \/tmp\/condtux-chroot-setup.sh/a\    /usr/local/sbin/condtux-copy-live-language-target "$TARGET"' "$INSTALLER"
+fi
+
+bash -n "$INSTALLER"
 
 if ! id condtux >/dev/null 2>&1; then
     useradd -m -s /bin/bash -c "Condtux Live User" condtux
@@ -54,7 +76,14 @@ fi
 
 echo "condtux:live" | chpasswd
 echo "root:live" | chpasswd
-usermod -aG sudo,audio,video,plugdev,netdev condtux || true
+
+extra_groups=""
+for group in sudo audio video plugdev netdev; do
+    if getent group "$group" >/dev/null 2>&1; then
+        extra_groups="${extra_groups}${extra_groups:+,}$group"
+    fi
+done
+[ -z "$extra_groups" ] || usermod -aG "$extra_groups" condtux
 
 mkdir -p /etc/sudoers.d
 cat > /etc/sudoers.d/condtux-live <<'SUDO'
@@ -76,4 +105,4 @@ GETTY
 
 systemctl enable condtux-live-setup.service
 
-echo "[ Condtux ] Usuario y configuracion Live listos."
+echo "[ Condtux ] Usuario y configuracion Live $VERSION listos."

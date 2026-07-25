@@ -110,6 +110,13 @@ if [ -z "$KERNEL_DEB" ] || [ ! -s "$KERNEL_DEB" ]; then
     exit 1
 fi
 
+KERNEL_DEB_PACKAGE="$(dpkg-deb -f "$KERNEL_DEB" Package)"
+KERNEL_DEB_VERSION="$(dpkg-deb -f "$KERNEL_DEB" Version)"
+if [ "$KERNEL_DEB_PACKAGE" != "$KERNEL_PACKAGE" ]; then
+    echo "[ Condtux ] ERROR: el .deb descargado pertenece a $KERNEL_DEB_PACKAGE y no a $KERNEL_PACKAGE." >&2
+    exit 1
+fi
+
 dpkg-deb --info "$KERNEL_DEB" >/dev/null
 dpkg-deb --fsys-tarfile "$KERNEL_DEB" | tar -tf - >/dev/null
 dpkg-deb -x "$KERNEL_DEB" "$VERIFY_ROOT/extracted"
@@ -140,7 +147,7 @@ if [ "$ZST_COUNT" -gt 0 ]; then
     find "$EXTRACTED_MODULES" -type f -name '*.ko.zst' -print0 | xargs -0 -r zstd -tq
 fi
 
-echo "[ Condtux ] Paquete verificado en ${EXTRACTED_MODULES#$VERIFY_ROOT/extracted} ($XZ_COUNT xz, $ZST_COUNT zstd)."
+echo "[ Condtux ] Paquete $KERNEL_DEB_PACKAGE $KERNEL_DEB_VERSION verificado en ${EXTRACTED_MODULES#$VERIFY_ROOT/extracted} ($XZ_COUNT xz, $ZST_COUNT zstd)."
 
 # El postinst ejecuta depmod inmediatamente. Se difiere durante la transaccion
 # para validar primero los archivos ya escritos; despues se restaura y ejecuta.
@@ -169,9 +176,11 @@ INITRAMFS_WRAPPER
     chmod 0755 "$INITRAMFS_HOOK"
 fi
 
-# Instalar exactamente el .deb que acaba de superar las comprobaciones. El
-# metapaquete queda instalado para recibir futuras actualizaciones de Debian.
-apt-get $APT_OPTIONS install -y --no-install-recommends "$KERNEL_DEB" "$KERNEL_META"
+# dpkg instala exactamente los bytes comprobados. Luego APT instala solamente
+# el metapaquete; como su dependencia exacta ya esta configurada, no vuelve a
+# descargar los 108 MB del kernel.
+dpkg -i "$KERNEL_DEB"
+apt-get $APT_OPTIONS install -y --no-install-recommends "$KERNEL_META=$KERNEL_META_VERSION"
 
 restore_diversions
 

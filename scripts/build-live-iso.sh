@@ -3,6 +3,31 @@ set -euo pipefail
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+BUILD_MODE="${1:---cached}"
+case "$BUILD_MODE" in
+    --cached|--clean)
+        ;;
+    -h|--help)
+        cat <<'USAGE'
+Uso: scripts/build-live-iso.sh [--cached|--clean]
+
+  --cached  Reconstruye chroot e ISO, conservando caches de descargas. Predeterminado.
+  --clean   Elimina tambien todas las caches y descarga todo nuevamente.
+USAGE
+        exit 0
+        ;;
+    *)
+        echo "[ Condtux ] ERROR: modo desconocido: $BUILD_MODE" >&2
+        echo "Uso: scripts/build-live-iso.sh [--cached|--clean]" >&2
+        exit 2
+        ;;
+esac
+
+if [ "$#" -gt 1 ]; then
+    echo "[ Condtux ] ERROR: demasiados argumentos." >&2
+    exit 2
+fi
+
 if [ ! -s VERSION ]; then
     echo "[ Condtux ] ERROR: falta el archivo VERSION." >&2
     exit 1
@@ -35,10 +60,13 @@ show_failure() {
         echo "[ ${PROJECT_NAME} ] Ultimas 80 lineas:" >&2
         tail -n 80 "$LOG_FILE" >&2 || true
     fi
+    echo "[ ${PROJECT_NAME} ] No ejecute 'lb build' para reanudar este chroot." >&2
+    echo "[ ${PROJECT_NAME} ] Corrija el codigo y use: sudo bash scripts/build-live-iso.sh --cached" >&2
     exit "$status"
 }
 trap show_failure ERR
 
+echo "[ ${PROJECT_NAME} ] Modo de build: $BUILD_MODE"
 echo "[ ${PROJECT_NAME} ] Aplicando version central..."
 sh scripts/apply-version.sh
 
@@ -90,27 +118,44 @@ for required in \
     config/package-lists/condtux-base.list.chroot \
     config/package-lists/condtux-installer.list.chroot \
     config/hooks/normal/0070-condtux-kernel-install.hook.chroot \
+    config/hooks/normal/0080-condtux-apt-sources.hook.chroot \
+    config/hooks/normal/0081-condtux-repo-test.hook.chroot \
     config/hooks/normal/0082-condtux-xfce-live.hook.chroot \
     config/hooks/normal/0083-condtux-kernel-integrity.hook.chroot \
+    config/hooks/normal/0090-condtux-live-user.hook.chroot \
     config/hooks/normal/0098-condtux-xfce-account-fix.hook.chroot \
     config/hooks/normal/0099-condtux-final-validation.hook.chroot \
-    config/includes.chroot/usr/local/sbin/condtux-install; do
+    config/includes.chroot/etc/condtux-version \
+    config/includes.chroot/usr/share/keyrings/condtux-archive-keyring.gpg \
+    config/includes.chroot/usr/local/sbin/condtux-install \
+    config/includes.chroot/usr/local/sbin/condtux-language \
+    config/includes.chroot/usr/local/sbin/condtux-live-setup \
+    config/includes.chroot/usr/local/sbin/condtux-copy-live-language-target \
+    config/includes.chroot/usr/local/bin/condtux-install-gui; do
     if [ ! -s "$required" ]; then
         echo "[ ${PROJECT_NAME} ] ERROR: falta archivo requerido: $required" >&2
         exit 1
     fi
 done
 
-echo "[ ${PROJECT_NAME} ] Limpiando build anterior por completo..."
+echo "[ ${PROJECT_NAME} ] Eliminando siempre chroot, binarios y marcadores anteriores..."
 sudo lb clean --all || true
-sudo rm -rf \
-    cache/bootstrap \
-    cache/packages.bootstrap \
-    cache/packages.chroot \
-    cache/packages.binary \
-    chroot \
-    binary \
-    .build
+sudo rm -rf chroot binary .build
+
+if [ "$BUILD_MODE" = "--clean" ]; then
+    echo "[ ${PROJECT_NAME} ] Eliminando tambien todas las caches..."
+    sudo rm -rf \
+        cache/bootstrap \
+        cache/packages.bootstrap \
+        cache/packages.chroot \
+        cache/packages.binary
+else
+    echo "[ ${PROJECT_NAME} ] Conservando caches de bootstrap y paquetes descargados."
+    # Los archivos parciales nunca deben sobrevivir entre builds.
+    if [ -d cache ]; then
+        sudo find cache -type f \( -name '*.partial' -o -name '*.FAILED' \) -delete 2>/dev/null || true
+    fi
+fi
 
 echo "[ ${PROJECT_NAME} ] Borrando binarios ISO viejos..."
 rm -f ./*.iso live-image-* binary.* chroot.files chroot.packages.install chroot.packages.live

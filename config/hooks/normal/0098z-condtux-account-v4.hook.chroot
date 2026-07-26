@@ -1,0 +1,251 @@
+#!/bin/sh
+set -eu
+
+INSTALLER_ES=/usr/local/sbin/condtux-install
+INSTALLER_EN=/usr/local/sbin/condtux-install-en
+ACCOUNT_WIZARD=/usr/local/libexec/condtux-account-wizard
+
+echo "[ Condtux ] Integrando asistente de cuentas V4..."
+
+if [ ! -f "$ACCOUNT_WIZARD" ]; then
+    echo "[ Condtux ] ERROR: falta $ACCOUNT_WIZARD." >&2
+    exit 1
+fi
+chmod 0755 "$ACCOUNT_WIZARD"
+bash -n "$ACCOUNT_WIZARD"
+"$ACCOUNT_WIZARD" --self-test
+
+cat > /tmp/condtux-collect-account-v4 <<'COLLECT_FUNCTION'
+# CONDTUX_ACCOUNT_WIZARD_V4
+collect_account_settings() {
+    local account_answers status account_language account_mode
+
+    account_language="${CONDTUX_INSTALL_LANGUAGE:-__LANG__}"
+    account_answers="$(mktemp /run/condtux-account-answers.XXXXXX)"
+    chmod 0600 "$account_answers"
+
+    status=0
+    /usr/local/libexec/condtux-account-wizard \
+        "$account_language" \
+        "$account_answers" \
+        "$INSTALL_USERNAME" \
+        "$INSTALL_FULLNAME" || status=$?
+
+    if [ "$status" -eq 130 ]; then
+        rm -f "$account_answers"
+        echo "Instalacion cancelada."
+        exit 0
+    fi
+    if [ "$status" -ne 0 ]; then
+        rm -f "$account_answers"
+        die "No se pudo completar la configuracion de la cuenta."
+    fi
+
+    if [ "$(stat -c '%a' "$account_answers")" != "600" ]; then
+        rm -f "$account_answers"
+        die "El archivo temporal de cuenta tiene permisos inseguros."
+    fi
+
+    # shellcheck disable=SC1090
+    . "$account_answers"
+    rm -f "$account_answers"
+
+    case "$USER_PASSWORD_HASH" in
+        '$6$'*) ;;
+        *) die "No se genero un hash valido para el usuario." ;;
+    esac
+
+    case "$ACCOUNT_MODE" in
+        sudo) ROOT_PASSWORD_HASH="" ;;
+        root)
+            case "$ROOT_PASSWORD_HASH" in
+                '$6$'*) ;;
+                *) die "No se genero un hash valido para root." ;;
+            esac
+            ;;
+        *) die "Modo de cuenta invalido." ;;
+    esac
+
+    account_mode="$(account_mode_label)"
+    echo "[ Condtux ] Cuenta preparada: $INSTALL_USERNAME ($account_mode)."
+}
+COLLECT_FUNCTION
+
+cat > /tmp/condtux-configure-account-v4 <<'CONFIGURE_FUNCTION'
+# CONDTUX_ACCOUNT_OVERRIDE_V4
+configure_accounts() {
+  local status group extra_groups="" shadow_hash root_shadow root_status home_owner
+
+  if ! [[ "$INSTALL_USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+    echo "[ Condtux ] ERROR: nombre de usuario invalido en el chroot: $INSTALL_USERNAME" >&2
+    exit 1
+  fi
+
+  case "$INSTALL_USERNAME" in
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt|condtux)
+      echo "[ Condtux ] ERROR: nombre de usuario reservado: $INSTALL_USERNAME" >&2
+      exit 1
+      ;;
+  esac
+
+  case "$USER_PASSWORD_HASH" in
+    '$6$'*) ;;
+    *)
+      echo "[ Condtux ] ERROR: hash de contrasena de usuario invalido." >&2
+      exit 1
+      ;;
+  esac
+
+  if [ "$INSTALL_USERNAME" != "condtux" ] && id condtux >/dev/null 2>&1; then
+    userdel -r condtux >/dev/null 2>&1 || true
+  fi
+
+  rm -f /etc/sudoers.d/condtux-live /etc/sudoers.d/condtux
+  rm -rf /etc/systemd/system/getty@tty1.service.d
+
+  if ! id "$INSTALL_USERNAME" >/dev/null 2>&1; then
+    useradd --create-home --user-group --shell /bin/bash --comment "$INSTALL_FULLNAME" "$INSTALL_USERNAME"
+  else
+    usermod --shell /bin/bash --comment "$INSTALL_FULLNAME" "$INSTALL_USERNAME"
+  fi
+
+  install -d -m 0750 -o "$INSTALL_USERNAME" -g "$INSTALL_USERNAME" "/home/$INSTALL_USERNAME"
+  usermod --password "$USER_PASSWORD_HASH" "$INSTALL_USERNAME"
+
+  shadow_hash="$(getent shadow "$INSTALL_USERNAME" | cut -d: -f2)"
+  if [ "$shadow_hash" != "$USER_PASSWORD_HASH" ]; then
+    echo "[ Condtux ] ERROR: el hash guardado para $INSTALL_USERNAME no coincide." >&2
+    exit 1
+  fi
+
+  status="$(passwd -S "$INSTALL_USERNAME" 2>/dev/null | awk '{print $2}')"
+  if [ "$status" != "P" ]; then
+    echo "[ Condtux ] ERROR: la cuenta $INSTALL_USERNAME no quedo utilizable (estado $status)." >&2
+    exit 1
+  fi
+
+  for group in audio video plugdev netdev; do
+    if getent group "$group" >/dev/null 2>&1; then
+      extra_groups="${extra_groups}${extra_groups:+,}$group"
+    fi
+  done
+  [ -z "$extra_groups" ] || usermod -aG "$extra_groups" "$INSTALL_USERNAME"
+
+  case "$ACCOUNT_MODE" in
+    root)
+      case "$ROOT_PASSWORD_HASH" in
+        '$6$'*) ;;
+        *)
+          echo "[ Condtux ] ERROR: hash de contrasena root invalido." >&2
+          exit 1
+          ;;
+      esac
+
+      gpasswd -d "$INSTALL_USERNAME" sudo >/dev/null 2>&1 || true
+      usermod --password "$ROOT_PASSWORD_HASH" root
+      root_shadow="$(getent shadow root | cut -d: -f2)"
+      if [ "$root_shadow" != "$ROOT_PASSWORD_HASH" ]; then
+        echo "[ Condtux ] ERROR: el hash guardado para root no coincide." >&2
+        exit 1
+      fi
+      root_status="$(passwd -S root 2>/dev/null | awk '{print $2}')"
+      if [ "$root_status" != "P" ]; then
+        echo "[ Condtux ] ERROR: root no quedo habilitado correctamente (estado $root_status)." >&2
+        exit 1
+      fi
+      ;;
+    sudo)
+      if ! getent group sudo >/dev/null 2>&1; then
+        echo "[ Condtux ] ERROR: el grupo sudo no existe." >&2
+        exit 1
+      fi
+      usermod -aG sudo "$INSTALL_USERNAME"
+      if ! id -nG "$INSTALL_USERNAME" | tr ' ' '\n' | grep -qx sudo; then
+        echo "[ Condtux ] ERROR: $INSTALL_USERNAME no quedo en el grupo sudo." >&2
+        exit 1
+      fi
+      passwd -l root >/dev/null
+      root_status="$(passwd -S root 2>/dev/null | awk '{print $2}')"
+      if [ "$root_status" != "L" ]; then
+        echo "[ Condtux ] ERROR: root no quedo bloqueado (estado $root_status)." >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "[ Condtux ] ERROR: modo de cuenta desconocido: $ACCOUNT_MODE" >&2
+      exit 1
+      ;;
+  esac
+
+  chown -R "$INSTALL_USERNAME:$INSTALL_USERNAME" "/home/$INSTALL_USERNAME"
+  home_owner="$(stat -c '%U:%G' "/home/$INSTALL_USERNAME")"
+  if [ "$home_owner" != "$INSTALL_USERNAME:$INSTALL_USERNAME" ]; then
+    echo "[ Condtux ] ERROR: propietario incorrecto en /home/$INSTALL_USERNAME: $home_owner" >&2
+    exit 1
+  fi
+
+  echo "[ Condtux ] Cuenta $INSTALL_USERNAME creada, verificada y lista para iniciar sesion."
+}
+CONFIGURE_FUNCTION
+
+patch_installer() {
+    file="$1"
+    language="$2"
+    collect_snippet="/tmp/condtux-collect-account-v4.$language"
+
+    [ -f "$file" ] || {
+        echo "[ Condtux ] ERROR: falta el instalador $file." >&2
+        exit 1
+    }
+
+    sed "s/__LANG__/$language/g" /tmp/condtux-collect-account-v4 > "$collect_snippet"
+
+    awk -v snippet="$collect_snippet" '
+        /^collect_account_settings\(\) \{/ {
+            while ((getline line < snippet) > 0) print line
+            close(snippet)
+            skipping = 1
+            next
+        }
+        skipping && /^need_root\(\) \{/ { skipping = 0 }
+        !skipping { print }
+    ' "$file" > "$file.tmp"
+    mv "$file.tmp" "$file"
+
+    awk '
+        /^configure_accounts\(\) \{/ {
+            while ((getline line < "/tmp/condtux-configure-account-v4") > 0) print line
+            close("/tmp/condtux-configure-account-v4")
+            skipping = 1
+            next
+        }
+        skipping && /^install_condtux_repo_test$/ { skipping = 0 }
+        !skipping { print }
+    ' "$file" > "$file.tmp"
+    mv "$file.tmp" "$file"
+
+    chmod 0755 "$file"
+    bash -n "$file"
+
+    [ "$(grep -c '^collect_account_settings() {' "$file")" -eq 1 ] || {
+        echo "[ Condtux ] ERROR: collect_account_settings duplicada en $file." >&2
+        exit 1
+    }
+    [ "$(grep -c '^configure_accounts() {' "$file")" -eq 1 ] || {
+        echo "[ Condtux ] ERROR: configure_accounts duplicada en $file." >&2
+        exit 1
+    }
+
+    grep -q 'CONDTUX_ACCOUNT_WIZARD_V4' "$file"
+    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V4' "$file"
+    grep -q '/usr/local/libexec/condtux-account-wizard' "$file"
+
+    rm -f "$collect_snippet"
+}
+
+patch_installer "$INSTALLER_ES" es
+patch_installer "$INSTALLER_EN" en
+
+rm -f /tmp/condtux-collect-account-v4 /tmp/condtux-configure-account-v4
+
+echo "[ Condtux ] Asistente de cuentas V4 integrado y validado."

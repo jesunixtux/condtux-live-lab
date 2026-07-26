@@ -21,7 +21,8 @@ collect_account_settings() {
     local account_answers status account_language account_mode
 
     account_language="${CONDTUX_INSTALL_LANGUAGE:-__LANG__}"
-    account_answers="$(mktemp /run/condtux-account-answers.XXXXXX)"
+    install -d -m 0700 /run/condtux-installer
+    account_answers="$(mktemp /run/condtux-installer/account-answers.XXXXXX)"
     chmod 0600 "$account_answers"
 
     status=0
@@ -82,7 +83,7 @@ configure_accounts() {
   fi
 
   case "$INSTALL_USERNAME" in
-    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt|condtux)
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt)
       echo "[ Condtux ] ERROR: nombre de usuario reservado: $INSTALL_USERNAME" >&2
       exit 1
       ;;

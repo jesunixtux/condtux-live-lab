@@ -1,0 +1,265 @@
+#!/bin/bash
+set -euo pipefail
+
+umask 077
+
+LANGUAGE_CODE="${1:-es}"
+OUTPUT_FILE="${2:-}"
+DEFAULT_USERNAME="${3:-usuario}"
+DEFAULT_FULLNAME="${4:-Usuario Condtux}"
+DIALOG_RESULT=""
+
+case "$LANGUAGE_CODE" in
+  es|en) ;;
+  --self-test)
+    test_hash="$(printf '%s' 'CondtuxAccountSelfTest' | openssl passwd -6 -stdin)"
+    case "$test_hash" in
+      '$6$'*) exit 0 ;;
+      *) echo "[ Condtux ] ERROR: OpenSSL no genero un hash SHA-512 valido." >&2; exit 1 ;;
+    esac
+    ;;
+  *) LANGUAGE_CODE="es" ;;
+esac
+
+if [ -z "$OUTPUT_FILE" ]; then
+  echo "[ Condtux ] ERROR: falta la ruta del archivo de respuestas." >&2
+  exit 2
+fi
+
+case "$OUTPUT_FILE" in
+  /run/*|/tmp/*) ;;
+  *)
+    echo "[ Condtux ] ERROR: el archivo de respuestas debe estar en /run o /tmp." >&2
+    exit 2
+    ;;
+esac
+
+if [ "$LANGUAGE_CODE" = "es" ]; then
+  TITLE="Cuenta de Condtux 0.12"
+  USER_PROMPT="Nombre de usuario para el sistema instalado.\n\nUsa minusculas, numeros, guion o guion bajo."
+  FULLNAME_PROMPT="Nombre visible del usuario."
+  PASS_PROMPT="Contrasena del usuario.\n\nLa escritura esta completamente oculta por seguridad."
+  PASS_REPEAT_PROMPT="Repite la contrasena del usuario.\n\nLa escritura esta completamente oculta por seguridad."
+  ROOT_PASS_PROMPT="Contrasena de root.\n\nLa escritura esta completamente oculta por seguridad."
+  ROOT_REPEAT_PROMPT="Repite la contrasena de root.\n\nLa escritura esta completamente oculta por seguridad."
+  INVALID_USER="Nombre de usuario invalido. Ejemplos: jesus, condtux, usuario_1"
+  EMPTY_PASS="La contrasena no puede quedar vacia."
+  SHORT_PASS="La contrasena debe tener al menos 4 caracteres."
+  MISMATCH_PASS="Las contrasenas no coinciden. Intenta nuevamente."
+  MODE_PROMPT="Elige como administrar el sistema instalado."
+  MODE_SUDO="Usuario administrador con sudo; root quedara bloqueado"
+  MODE_ROOT="Usuario normal y cuenta root con contrasena separada"
+  CANCEL_TEXT="Configuracion de cuenta cancelada."
+else
+  TITLE="Condtux 0.12 account"
+  USER_PROMPT="Username for the installed system.\n\nUse lowercase letters, numbers, hyphen or underscore."
+  FULLNAME_PROMPT="Visible name for the user."
+  PASS_PROMPT="User password.\n\nTyping is completely hidden for security."
+  PASS_REPEAT_PROMPT="Repeat the user password.\n\nTyping is completely hidden for security."
+  ROOT_PASS_PROMPT="Root password.\n\nTyping is completely hidden for security."
+  ROOT_REPEAT_PROMPT="Repeat the root password.\n\nTyping is completely hidden for security."
+  INVALID_USER="Invalid username. Examples: jesus, condtux, user_1"
+  EMPTY_PASS="The password cannot be empty."
+  SHORT_PASS="The password must contain at least 4 characters."
+  MISMATCH_PASS="The passwords do not match. Try again."
+  MODE_PROMPT="Choose how to administer the installed system."
+  MODE_SUDO="Administrator user with sudo; root will be locked"
+  MODE_ROOT="Normal user and a separate root password"
+  CANCEL_TEXT="Account configuration cancelled."
+fi
+
+has_whiptail() {
+  command -v whiptail >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ] && [ -t 2 ]
+}
+
+show_message() {
+  local text="$1"
+  if has_whiptail; then
+    whiptail --title "$TITLE" --msgbox "$text" 13 76
+  else
+    printf '\n%s\n\n' "$text" >&2
+  fi
+}
+
+capture_whiptail() {
+  local temporary status
+  temporary="$(mktemp /run/condtux-dialog.XXXXXX)"
+  chmod 0600 "$temporary"
+
+  set +e
+  whiptail --title "$TITLE" "$@" 3>"$temporary" 1>&2 2>&3
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ]; then
+    rm -f "$temporary"
+    return "$status"
+  fi
+
+  DIALOG_RESULT="$(cat "$temporary")"
+  rm -f "$temporary"
+  return 0
+}
+
+ask_input() {
+  local prompt="$1" default_value="${2:-}" answer=""
+
+  if has_whiptail; then
+    capture_whiptail --inputbox "$prompt" 12 76 "$default_value" || return $?
+    return 0
+  fi
+
+  if [ -n "$default_value" ]; then
+    printf '%b [%s]\n> ' "$prompt" "$default_value" >&2
+  else
+    printf '%b\n> ' "$prompt" >&2
+  fi
+  IFS= read -r answer || return 1
+  DIALOG_RESULT="${answer:-$default_value}"
+}
+
+ask_secret() {
+  local prompt="$1" answer=""
+
+  if has_whiptail; then
+    capture_whiptail --passwordbox "$prompt" 13 76 || return $?
+    return 0
+  fi
+
+  printf '%b\n> ' "$prompt" >&2
+  IFS= read -r -s answer || return 1
+  printf '\n' >&2
+  DIALOG_RESULT="$answer"
+}
+
+ask_mode() {
+  local answer=""
+
+  if has_whiptail; then
+    capture_whiptail --menu "$MODE_PROMPT" 16 78 2 \
+      sudo "$MODE_SUDO" \
+      root "$MODE_ROOT" || return $?
+    return 0
+  fi
+
+  printf '%s\n  1) %s\n  2) %s\nSeleccion [1]: ' \
+    "$MODE_PROMPT" "$MODE_SUDO" "$MODE_ROOT" >&2
+  IFS= read -r answer || return 1
+  case "${answer:-1}" in
+    1|sudo|SUDO) DIALOG_RESULT="sudo" ;;
+    2|root|ROOT) DIALOG_RESULT="root" ;;
+    *) return 2 ;;
+  esac
+}
+
+validate_username() {
+  local value="$1"
+  [[ "$value" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || return 1
+  case "$value" in
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt|condtux)
+      return 1
+      ;;
+  esac
+}
+
+ask_password_hash() {
+  local prompt="$1" repeat_prompt="$2"
+  local pass1="" pass2="" generated_hash=""
+
+  while true; do
+    ask_secret "$prompt" || return 130
+    pass1="$DIALOG_RESULT"
+    ask_secret "$repeat_prompt" || return 130
+    pass2="$DIALOG_RESULT"
+    DIALOG_RESULT=""
+
+    if [ -z "$pass1" ]; then
+      show_message "$EMPTY_PASS"
+      continue
+    fi
+    if [ "${#pass1}" -lt 4 ]; then
+      show_message "$SHORT_PASS"
+      continue
+    fi
+    if [ "$pass1" != "$pass2" ]; then
+      show_message "$MISMATCH_PASS"
+      continue
+    fi
+
+    generated_hash="$(printf '%s' "$pass1" | openssl passwd -6 -stdin)"
+    unset pass1 pass2
+
+    case "$generated_hash" in
+      '$6$'*)
+        DIALOG_RESULT="$generated_hash"
+        return 0
+        ;;
+      *)
+        echo "[ Condtux ] ERROR: no se pudo generar el hash SHA-512." >&2
+        return 1
+        ;;
+    esac
+  done
+}
+
+while true; do
+  ask_input "$USER_PROMPT" "$DEFAULT_USERNAME" || {
+    echo "$CANCEL_TEXT" >&2
+    exit 130
+  }
+  INSTALL_USERNAME="$DIALOG_RESULT"
+
+  if validate_username "$INSTALL_USERNAME"; then
+    break
+  fi
+  show_message "$INVALID_USER"
+done
+
+ask_input "$FULLNAME_PROMPT" "$DEFAULT_FULLNAME" || {
+  echo "$CANCEL_TEXT" >&2
+  exit 130
+}
+INSTALL_FULLNAME="${DIALOG_RESULT:-$DEFAULT_FULLNAME}"
+INSTALL_FULLNAME="${INSTALL_FULLNAME//$'\n'/ }"
+INSTALL_FULLNAME="${INSTALL_FULLNAME//:/ }"
+
+ask_password_hash "$PASS_PROMPT" "$PASS_REPEAT_PROMPT" || {
+  status=$?
+  [ "$status" -eq 130 ] && echo "$CANCEL_TEXT" >&2
+  exit "$status"
+}
+USER_PASSWORD_HASH="$DIALOG_RESULT"
+DIALOG_RESULT=""
+
+ask_mode || {
+  echo "$CANCEL_TEXT" >&2
+  exit 130
+}
+ACCOUNT_MODE="$DIALOG_RESULT"
+DIALOG_RESULT=""
+ROOT_PASSWORD_HASH=""
+
+if [ "$ACCOUNT_MODE" = "root" ]; then
+  ask_password_hash "$ROOT_PASS_PROMPT" "$ROOT_REPEAT_PROMPT" || {
+    status=$?
+    [ "$status" -eq 130 ] && echo "$CANCEL_TEXT" >&2
+    exit "$status"
+  }
+  ROOT_PASSWORD_HASH="$DIALOG_RESULT"
+  DIALOG_RESULT=""
+fi
+
+OUTPUT_TMP="${OUTPUT_FILE}.tmp.$$"
+install -d -m 0700 "$(dirname "$OUTPUT_FILE")"
+{
+  printf 'INSTALL_USERNAME=%q\n' "$INSTALL_USERNAME"
+  printf 'INSTALL_FULLNAME=%q\n' "$INSTALL_FULLNAME"
+  printf 'ACCOUNT_MODE=%q\n' "$ACCOUNT_MODE"
+  printf 'USER_PASSWORD_HASH=%q\n' "$USER_PASSWORD_HASH"
+  printf 'ROOT_PASSWORD_HASH=%q\n' "$ROOT_PASSWORD_HASH"
+} > "$OUTPUT_TMP"
+chmod 0600 "$OUTPUT_TMP"
+mv -f "$OUTPUT_TMP" "$OUTPUT_FILE"
+
+unset USER_PASSWORD_HASH ROOT_PASSWORD_HASH DIALOG_RESULT
+exit 0

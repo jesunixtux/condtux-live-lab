@@ -10,6 +10,7 @@ nano
 curl
 wget
 ca-certificates
+openssl
 network-manager
 whiptail
 dialog

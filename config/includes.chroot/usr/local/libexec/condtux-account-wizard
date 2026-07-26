@@ -34,6 +34,11 @@ case "$OUTPUT_FILE" in
     ;;
 esac
 
+OUTPUT_DIR="$(dirname "$OUTPUT_FILE")"
+if [ ! -d "$OUTPUT_DIR" ]; then
+  install -d -m 0700 "$OUTPUT_DIR"
+fi
+
 if [ "$LANGUAGE_CODE" = "es" ]; then
   TITLE="Cuenta de Condtux 0.12"
   USER_PROMPT="Nombre de usuario para el sistema instalado.\n\nUsa minusculas, numeros, guion o guion bajo."
@@ -156,7 +161,7 @@ validate_username() {
   local value="$1"
   [[ "$value" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || return 1
   case "$value" in
-    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt|condtux)
+    root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|gnats|nobody|_apt)
       return 1
       ;;
   esac
@@ -223,11 +228,14 @@ INSTALL_FULLNAME="${DIALOG_RESULT:-$DEFAULT_FULLNAME}"
 INSTALL_FULLNAME="${INSTALL_FULLNAME//$'\n'/ }"
 INSTALL_FULLNAME="${INSTALL_FULLNAME//:/ }"
 
-ask_password_hash "$PASS_PROMPT" "$PASS_REPEAT_PROMPT" || {
-  status=$?
-  [ "$status" -eq 130 ] && echo "$CANCEL_TEXT" >&2
+status=0
+ask_password_hash "$PASS_PROMPT" "$PASS_REPEAT_PROMPT" || status=$?
+if [ "$status" -ne 0 ]; then
+  if [ "$status" -eq 130 ]; then
+    echo "$CANCEL_TEXT" >&2
+  fi
   exit "$status"
-}
+fi
 USER_PASSWORD_HASH="$DIALOG_RESULT"
 DIALOG_RESULT=""
 
@@ -240,17 +248,19 @@ DIALOG_RESULT=""
 ROOT_PASSWORD_HASH=""
 
 if [ "$ACCOUNT_MODE" = "root" ]; then
-  ask_password_hash "$ROOT_PASS_PROMPT" "$ROOT_REPEAT_PROMPT" || {
-    status=$?
-    [ "$status" -eq 130 ] && echo "$CANCEL_TEXT" >&2
+  status=0
+  ask_password_hash "$ROOT_PASS_PROMPT" "$ROOT_REPEAT_PROMPT" || status=$?
+  if [ "$status" -ne 0 ]; then
+    if [ "$status" -eq 130 ]; then
+      echo "$CANCEL_TEXT" >&2
+    fi
     exit "$status"
-  }
+  fi
   ROOT_PASSWORD_HASH="$DIALOG_RESULT"
   DIALOG_RESULT=""
 fi
 
 OUTPUT_TMP="${OUTPUT_FILE}.tmp.$$"
-install -d -m 0700 "$(dirname "$OUTPUT_FILE")"
 {
   printf 'INSTALL_USERNAME=%q\n' "$INSTALL_USERNAME"
   printf 'INSTALL_FULLNAME=%q\n' "$INSTALL_FULLNAME"

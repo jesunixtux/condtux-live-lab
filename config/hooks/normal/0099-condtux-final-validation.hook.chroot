@@ -1,7 +1,15 @@
 #!/bin/sh
 set -eu
 
-echo "[ Condtux ] Ejecutando validacion final de la ISO..."
+VERSION="$(cat /etc/condtux-version 2>/dev/null || true)"
+case "$VERSION" in
+    ''|*[!0-9.]*|.*|*.)
+        echo "[ Condtux ] ERROR: version Live invalida." >&2
+        exit 1
+        ;;
+esac
+
+echo "[ Condtux ] Ejecutando validacion final de la ISO $VERSION..."
 
 check_script_syntax() {
     script="$1"
@@ -16,6 +24,14 @@ check_script_syntax() {
             ;;
     esac
 }
+
+ACCOUNT_WIZARD=/usr/local/libexec/condtux-account-wizard
+if [ ! -x "$ACCOUNT_WIZARD" ]; then
+    echo "[ Condtux ] ERROR: falta el asistente de cuentas ejecutable." >&2
+    exit 1
+fi
+check_script_syntax "$ACCOUNT_WIZARD"
+"$ACCOUNT_WIZARD" --self-test
 
 for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install-en; do
     [ -f "$installer" ] || {
@@ -34,11 +50,15 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     bash -n "$installer"
 
     if [ "$(grep -c '^install_xfce_desktop() {' "$installer")" -ne 1 ]; then
-        echo "[ Condtux ] ERROR: install_xfce_desktop no quedo definido exactamente una vez en $installer" >&2
+        echo "[ Condtux ] ERROR: install_xfce_desktop no quedo definida exactamente una vez en $installer" >&2
+        exit 1
+    fi
+    if [ "$(grep -c '^collect_account_settings() {' "$installer")" -ne 1 ]; then
+        echo "[ Condtux ] ERROR: collect_account_settings no quedo definida exactamente una vez en $installer" >&2
         exit 1
     fi
     if [ "$(grep -c '^configure_accounts() {' "$installer")" -ne 1 ]; then
-        echo "[ Condtux ] ERROR: configure_accounts no quedo definido exactamente una vez en $installer" >&2
+        echo "[ Condtux ] ERROR: configure_accounts no quedo definida exactamente una vez en $installer" >&2
         exit 1
     fi
 
@@ -47,13 +67,26 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     grep -q 'condtux-copy-system-target' "$installer"
     grep -q 'shimx64.efi' "$installer"
     grep -q 'systemctl enable nftables.service' "$installer"
-    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$installer"
+    grep -q 'CONDTUX_ACCOUNT_WIZARD_V4' "$installer"
+    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V4' "$installer"
+    grep -q '/usr/local/libexec/condtux-account-wizard' "$installer"
+    grep -q 'getent shadow "$INSTALL_USERNAME"' "$installer"
+    grep -q 'id -nG "$INSTALL_USERNAME"' "$installer"
     grep -q 'apt install -y --no-install-recommends' "$installer"
     grep -q '^[[:space:]]*xfce4 \\' "$installer"
     grep -q 'dpkg -L xfconf' "$installer"
     grep -q 'mate-polkit' "$installer"
     grep -q 'condtux-polkit-agent.desktop' "$installer"
 
+    if grep -q 'USER_PASSWORD_HASH="$(ask_password_hash' "$installer" || \
+       grep -q 'ROOT_PASSWORD_HASH="$(ask_password_hash' "$installer"; then
+        echo "[ Condtux ] ERROR: $installer aun usa captura de contrasena dentro de sustitucion de comandos." >&2
+        exit 1
+    fi
+    if grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$installer"; then
+        echo "[ Condtux ] ERROR: $installer conserva la implementacion de cuentas V3." >&2
+        exit 1
+    fi
     if grep -q 'apt-cache show "$CONDTUX_XFCE_PACKAGE"' "$installer"; then
         echo "[ Condtux ] ERROR: el instalador aun depende del XFCE monolitico." >&2
         exit 1
@@ -81,7 +114,9 @@ for installer in /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install
     bash -n "$chroot_test"
     grep -q '^install_xfce_desktop() {' "$chroot_test"
     grep -q '^configure_accounts() {' "$chroot_test"
-    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V3' "$chroot_test"
+    grep -q 'CONDTUX_ACCOUNT_OVERRIDE_V4' "$chroot_test"
+    grep -q 'getent shadow "$INSTALL_USERNAME"' "$chroot_test"
+    grep -q 'passwd -l root' "$chroot_test"
     grep -q 'mate-polkit' "$chroot_test"
     rm -f "$chroot_test"
 done
@@ -90,7 +125,8 @@ for script in \
     /usr/local/sbin/condtux-time-sync \
     /usr/local/sbin/condtux-copy-system-target \
     /usr/local/bin/condtux-install-gui \
-    /usr/local/bin/condtux-startxfce4; do
+    /usr/local/bin/condtux-startxfce4 \
+    /usr/local/libexec/condtux-account-wizard; do
     [ -f "$script" ] || {
         echo "[ Condtux ] ERROR: falta $script" >&2
         exit 1
@@ -98,14 +134,14 @@ for script in \
     check_script_syntax "$script"
 done
 
-for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit zstd; do
+for package in xfce4 xfce4-session xfconf xfce4-settings xfdesktop4 xfwm4 lightdm mate-polkit openssl zstd; do
     if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
         echo "[ Condtux ] ERROR: paquete requerido incompleto: $package" >&2
         exit 1
     fi
 done
 
-for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm zstd; do
+for command_name in startxfce4 xfce4-session xfconf-query xfwm4 xfdesktop lightdm openssl zstd; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "[ Condtux ] ERROR: comando requerido ausente: $command_name" >&2
         exit 1
@@ -179,4 +215,4 @@ if [ -f /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml ] && \
     exit 1
 fi
 
-echo "[ Condtux 0.11 ] ISO validada: XFCE, Polkit, kernel, cuentas, seguridad y dpkg correctos."
+echo "[ Condtux $VERSION ] ISO validada: instalador de cuentas V4, XFCE, Polkit, kernel y seguridad correctos."

@@ -1,0 +1,94 @@
+#!/bin/sh
+set -eu
+
+WIZARD=/usr/local/libexec/condtux-account-wizard
+TEST_ROOT=/tmp/condtux-account-wizard-tests
+
+echo "[ Condtux ] Probando asistente de cuentas en espanol e ingles..."
+
+[ -x "$WIZARD" ] || {
+    echo "[ Condtux ] ERROR: falta el asistente de cuentas ejecutable." >&2
+    exit 1
+}
+
+rm -rf "$TEST_ROOT"
+install -d -m 0700 "$TEST_ROOT"
+
+run_test() {
+    language="$1"
+    expected_user="$2"
+    expected_mode="$3"
+    output="$TEST_ROOT/$language.answers"
+    input="$TEST_ROOT/$language.input"
+    log="$TEST_ROOT/$language.log"
+
+    case "$language:$expected_mode" in
+        es:sudo)
+            cat > "$input" <<'INPUT'
+condtux_test_es
+Prueba Condtux ES
+ClaveUsuario123!
+ClaveUsuario123!
+1
+INPUT
+            ;;
+        en:root)
+            cat > "$input" <<'INPUT'
+condtux_test_en
+Condtux EN Test
+UserPassword123!
+UserPassword123!
+2
+RootPassword123!
+RootPassword123!
+INPUT
+            ;;
+        *)
+            echo "[ Condtux ] ERROR: caso de prueba desconocido: $language:$expected_mode" >&2
+            exit 1
+            ;;
+    esac
+
+    chmod 0600 "$input"
+    if ! "$WIZARD" "$language" "$output" usuario "Usuario Condtux" \
+        < "$input" > /dev/null 2> "$log"; then
+        cat "$log" >&2
+        echo "[ Condtux ] ERROR: fallo el asistente de cuentas en $language." >&2
+        exit 1
+    fi
+
+    [ -s "$output" ] || {
+        echo "[ Condtux ] ERROR: el asistente no genero respuestas en $language." >&2
+        exit 1
+    }
+    [ "$(stat -c '%a' "$output")" = "600" ] || {
+        echo "[ Condtux ] ERROR: permisos inseguros en $output." >&2
+        exit 1
+    }
+
+    (
+        set -eu
+        # shellcheck disable=SC1090
+        . "$output"
+
+        [ "$INSTALL_USERNAME" = "$expected_user" ]
+        [ "$ACCOUNT_MODE" = "$expected_mode" ]
+        [ -n "$INSTALL_FULLNAME" ]
+        case "$USER_PASSWORD_HASH" in '$6$'*) ;; *) exit 1 ;; esac
+
+        if [ "$expected_mode" = "root" ]; then
+            case "$ROOT_PASSWORD_HASH" in '$6$'*) ;; *) exit 1 ;; esac
+        else
+            [ -z "$ROOT_PASSWORD_HASH" ]
+        fi
+    ) || {
+        echo "[ Condtux ] ERROR: respuestas invalidas para $language:$expected_mode." >&2
+        exit 1
+    }
+}
+
+run_test es condtux_test_es sudo
+run_test en condtux_test_en root
+
+rm -rf "$TEST_ROOT"
+echo "[ Condtux ] Asistente de cuentas probado correctamente en ambos modos."

@@ -46,9 +46,21 @@ printf '%s\n' "$VERSION" > "$ROOT/config/includes.chroot/etc/condtux-version"
 replace_if_exists "$ROOT/config/includes.binary/boot/grub/themes/condtux/theme.txt" \
     -e "s#Condtux GNU/Linux 0\.[0-9][0-9]*#Condtux GNU/Linux ${VERSION}#g"
 
-replace_if_exists "$ROOT/config/includes.chroot/usr/local/sbin/condtux-install" \
-    -e "s#Condtux Installer 0\.[0-9][0-9]*#Condtux Installer ${VERSION}#g" \
-    -e "s#Condtux 0\.[0-9][0-9]*#Condtux ${VERSION}#g"
+for installer in \
+    "$ROOT/config/includes.chroot/usr/local/sbin/condtux-install" \
+    "$ROOT/config/includes.chroot/usr/local/sbin/condtux-install-en"; do
+    replace_if_exists "$installer" \
+        -e "s#Condtux Installer 0\.[0-9][0-9]*#Condtux Installer ${VERSION}#g" \
+        -e "s#Condtux 0\.[0-9][0-9]*#Condtux ${VERSION}#g"
+done
+
+replace_if_exists "$ROOT/config/includes.chroot/usr/local/bin/condtux-install-gui" \
+    -e "s#Instalar Condtux 0\.[0-9][0-9]*#Instalar Condtux ${VERSION}#g" \
+    -e "s#Install Condtux 0\.[0-9][0-9]*#Install Condtux ${VERSION}#g"
+
+replace_if_exists "$ROOT/config/includes.chroot/usr/local/libexec/condtux-account-wizard" \
+    -e "s#Cuenta de Condtux 0\.[0-9][0-9]*#Cuenta de Condtux ${VERSION}#g" \
+    -e "s#Condtux 0\.[0-9][0-9]* account#Condtux ${VERSION} account#g"
 
 replace_if_exists "$ROOT/config/hooks/normal/9000-condtux-grub-branding.hook.binary" \
     -e "s#Condtux GNU/Linux 0\.[0-9][0-9]*#Condtux GNU/Linux ${VERSION}#g" \

@@ -17,6 +17,7 @@ REQUIRED_FILES="
 /usr/local/sbin/condtux-copy-live-language-target
 /usr/local/bin/condtux-install-gui
 /usr/local/sbin/condtux-install
+/usr/local/libexec/condtux-account-wizard
 /etc/skel/Desktop/condtux-install.desktop
 /etc/systemd/system/condtux-live-setup.service
 "
@@ -34,7 +35,11 @@ chmod 0755 \
     /usr/local/sbin/condtux-live-setup \
     /usr/local/sbin/condtux-copy-live-language-target \
     /usr/local/bin/condtux-install-gui \
-    /usr/local/sbin/condtux-install
+    /usr/local/sbin/condtux-install \
+    /usr/local/libexec/condtux-account-wizard
+
+bash -n /usr/local/libexec/condtux-account-wizard
+/usr/local/libexec/condtux-account-wizard --self-test
 
 # Genera los dos idiomas soportados antes del primer arranque.
 sed -i 's/^# *es_CL.UTF-8 UTF-8/es_CL.UTF-8 UTF-8/' /etc/locale.gen
@@ -105,4 +110,4 @@ GETTY
 
 systemctl enable condtux-live-setup.service
 
-echo "[ Condtux ] Usuario y configuracion Live $VERSION listos."
+echo "[ Condtux ] Usuario, instalador y asistente de cuentas Live $VERSION listos."

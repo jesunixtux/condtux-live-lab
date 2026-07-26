@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+WIZARD=/usr/local/libexec/condtux-account-wizard
+
+echo "[ Condtux ] Prevalidando instalador y asistente de cuentas..."
+
+for file in \
+    /usr/local/sbin/condtux-install \
+    /usr/local/sbin/condtux-install-en \
+    "$WIZARD"; do
+    if [ ! -f "$file" ]; then
+        echo "[ Condtux ] ERROR: falta archivo requerido para instalar cuentas: $file" >&2
+        exit 1
+    fi
+done
+
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "[ Condtux ] ERROR: falta OpenSSL para generar hashes de contrasena." >&2
+    exit 1
+fi
+
+chmod 0755 /usr/local/sbin/condtux-install /usr/local/sbin/condtux-install-en "$WIZARD"
+bash -n /usr/local/sbin/condtux-install
+bash -n /usr/local/sbin/condtux-install-en
+bash -n "$WIZARD"
+"$WIZARD" --self-test
+
+echo "[ Condtux ] Instalador y motor de hashes prevalidado correctamente."

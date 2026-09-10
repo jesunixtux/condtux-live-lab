@@ -74,5 +74,5 @@ jobs:
           set -euo pipefail
           grep -q -- '--uefi-secure-boot enable' scripts/build-live-iso.sh
           grep -q -- '--archive-areas "main non-free-firmware"' scripts/build-live-iso.sh
-          grep -q 'EFI/BOOT/BOOTX64.EFI' scripts/build-live-iso.sh
+          grep -q 'EFI/BOOT/BOOTX64.EFI' scripts/validate-built-iso.sh
           grep -q 'dpkg --audit' config/hooks/normal/0099-condtux-final-validation.hook.chroot
